@@ -39,9 +39,59 @@ class ConversationState(Enum):
     MANAGE_INSURANCE = auto()
     LEARN_MORE = auto()
 
-# Store user states
+# Store user states and responses
 user_states: Dict[int, ConversationState] = {}
 user_responses: Dict[int, Dict] = {}
+
+# Human-readable labels for responses
+response_labels = {
+    'explore': 'Explore travel insurance options',
+    'manage': 'Manage existing insurance',
+    'learn': 'Learn more about Travel2morrow',
+    'solo': 'Solo traveler',
+    'family': 'Family',
+    'single': 'Single trip',
+    'annual': 'Annual coverage',
+    'adventure_yes': 'Yes',
+    'adventure_no': 'No',
+    'medical_yes': 'Yes',
+    'medical_no': 'No',
+    'budget_50': 'Under $50',
+    'budget_100': '$50-$100',
+    'budget_above': 'Above $100',
+    'view_policy': 'View policy details',
+    'update_policy': 'Update policy',
+    'file_claim': 'File a claim'
+}
+
+def format_choice_history(user_id: int) -> str:
+    """Format the user's choice history into a readable summary."""
+    if user_id not in user_responses or not user_responses[user_id]:
+        return ""
+    
+    history = []
+    state_labels = {
+        ConversationState.WHO_TRAVELLING: "Who's travelling",
+        ConversationState.TRIP_TYPE: "Trip type",
+        ConversationState.DESTINATION: "Destination",
+        ConversationState.TRAVEL_DATE: "Travel date",
+        ConversationState.ADVENTURE_ACTIVITIES: "Adventure activities",
+        ConversationState.ADVENTURE_DETAILS: "Adventure details",
+        ConversationState.MEDICAL_CONDITIONS: "Medical conditions",
+        ConversationState.MEDICAL_DETAILS: "Medical details",
+        ConversationState.BUDGET: "Budget"
+    }
+    
+    for state, response in user_responses[user_id].items():
+        if state in state_labels:
+            label = state_labels[state]
+            value = response_labels.get(response, response)
+            history.append(f"{label}: {value}")
+    
+    if not history:
+        return ""
+    
+    return "Your choices so far:\n" + "\n".join(history) + "\n\n"
 
 def get_keyboard_for_state(state: ConversationState) -> Optional[InlineKeyboardMarkup]:
     keyboards = {
@@ -79,9 +129,13 @@ def get_keyboard_for_state(state: ConversationState) -> Optional[InlineKeyboardM
     }
     
     keyboard = keyboards.get(state)
+    if keyboard and state != ConversationState.START:
+        # Add "Go Back" button to all screens except START
+        keyboard.append([InlineKeyboardButton("◀️ Go Back", callback_data='go_back')])
+    
     return InlineKeyboardMarkup(keyboard) if keyboard else None
 
-def get_message_for_state(state: ConversationState, user_data: Dict = None) -> str:
+def get_message_for_state(state: ConversationState, user_id: int) -> str:
     messages = {
         ConversationState.START: "Hi! Welcome to Travel2morrow. How can I assist you today?",
         ConversationState.WHO_TRAVELLING: "Who's travelling?",
@@ -99,18 +153,26 @@ def get_message_for_state(state: ConversationState, user_data: Dict = None) -> s
         ConversationState.MANAGE_INSURANCE: "Please select an option:",
         ConversationState.LEARN_MORE: "Working on it..."
     }
-    return messages.get(state, "How can I help you?")
+    
+    base_message = messages.get(state, "How can I help you?")
+    history = format_choice_history(user_id)
+    return f"{history}{base_message}"
 
 async def determine_next_state(current_state: ConversationState, user_input: str) -> ConversationState:
-    if "back" in user_input.lower():
+    if user_input.lower() in ['back', 'go_back', 'previous']:
         # Define state transitions for going back
         previous_states = {
             ConversationState.TRIP_TYPE: ConversationState.WHO_TRAVELLING,
             ConversationState.DESTINATION: ConversationState.TRIP_TYPE,
             ConversationState.TRAVEL_DATE: ConversationState.DESTINATION,
             ConversationState.ADVENTURE_ACTIVITIES: ConversationState.TRAVEL_DATE,
+            ConversationState.ADVENTURE_DETAILS: ConversationState.ADVENTURE_ACTIVITIES,
             ConversationState.MEDICAL_CONDITIONS: ConversationState.ADVENTURE_ACTIVITIES,
+            ConversationState.MEDICAL_DETAILS: ConversationState.MEDICAL_CONDITIONS,
             ConversationState.BUDGET: ConversationState.MEDICAL_CONDITIONS,
+            ConversationState.RECOMMENDATION: ConversationState.BUDGET,
+            ConversationState.ADDITIONAL_COVERAGE: ConversationState.RECOMMENDATION,
+            ConversationState.QUESTIONS: ConversationState.ADDITIONAL_COVERAGE
         }
         return previous_states.get(current_state, current_state)
     
@@ -159,18 +221,10 @@ async def start(update: Update, context: CallbackContext) -> None:
     user_responses[user_id] = {}
     
     keyboard = get_keyboard_for_state(ConversationState.START)
-    message = get_message_for_state(ConversationState.START)
+    message = get_message_for_state(ConversationState.START, user_id)
     
     await update.message.reply_text(message, reply_markup=keyboard)
 
-async def help_command(update: Update, context: CallbackContext) -> None:
-    """Handle the /help command."""
-    await update.message.reply_text(
-        "You can control me by sending these commands:\n"
-        "/start - Start a conversation\n"
-        "/help - Get help on how to use this bot"
-    )
-    
 async def handle_message(update: Update, context: CallbackContext) -> None:
     """Handle text messages."""
     user_id = update.effective_user.id
@@ -178,8 +232,9 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     current_state = user_states.get(user_id, ConversationState.START)
     
     # Store user response
-    user_responses.setdefault(user_id, {})
-    user_responses[user_id][current_state] = user_input
+    if current_state not in [ConversationState.START, ConversationState.LEARN_MORE]:
+        user_responses.setdefault(user_id, {})
+        user_responses[user_id][current_state] = user_input
     
     # Get AI assistance for understanding user input
     context_str = f"Current state: {current_state}, User input: {user_input}"
@@ -190,12 +245,18 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     
     # Determine next state
     next_state = await determine_next_state(current_state, user_input)
+    
+    # If going back, remove the last response
+    if next_state != current_state and next_state in user_responses.get(user_id, {}):
+        del user_responses[user_id][current_state]
+    
     user_states[user_id] = next_state
     
     # Get appropriate message and keyboard for next state
-    message = get_message_for_state(next_state, user_responses.get(user_id))
+    message = get_message_for_state(next_state, user_id)
     keyboard = get_keyboard_for_state(next_state)
     
+    # Send a new message instead of editing
     await update.message.reply_text(message, reply_markup=keyboard)
 
 async def button_handler(update: Update, context: CallbackContext) -> None:
@@ -206,28 +267,49 @@ async def button_handler(update: Update, context: CallbackContext) -> None:
     
     await query.answer()
     
-    # Store user response
-    user_responses.setdefault(user_id, {})
-    user_responses[user_id][current_state] = query.data
+    # Create a message showing what the user selected
+    selected_option = response_labels.get(query.data, query.data)
+    user_selection_message = f"Selected: {selected_option}"
+    await query.message.reply_text(user_selection_message)
     
-    # Handle specific button actions
-    if query.data == 'explore':
-        next_state = ConversationState.WHO_TRAVELLING
-    elif query.data == 'manage':
-        next_state = ConversationState.MANAGE_INSURANCE
-    elif query.data == 'learn':
-        next_state = ConversationState.LEARN_MORE
-    elif query.data in ['adventure_yes', 'medical_yes']:
-        next_state = (ConversationState.ADVENTURE_DETAILS if query.data == 'adventure_yes' 
-                     else ConversationState.MEDICAL_DETAILS)
+    # Handle "Go Back" button
+    if query.data == 'go_back':
+        next_state = await determine_next_state(current_state, 'back')
+        if current_state in user_responses.get(user_id, {}):
+            del user_responses[user_id][current_state]
     else:
-        next_state = await determine_next_state(current_state, query.data)
+        # Store user response
+        if current_state not in [ConversationState.START, ConversationState.LEARN_MORE]:
+            user_responses.setdefault(user_id, {})
+            user_responses[user_id][current_state] = query.data
+        
+        # Handle specific button actions
+        if query.data == 'explore':
+            next_state = ConversationState.WHO_TRAVELLING
+        elif query.data == 'manage':
+            next_state = ConversationState.MANAGE_INSURANCE
+        elif query.data == 'learn':
+            next_state = ConversationState.LEARN_MORE
+        elif query.data in ['adventure_yes', 'medical_yes']:
+            next_state = (ConversationState.ADVENTURE_DETAILS if query.data == 'adventure_yes' 
+                         else ConversationState.MEDICAL_DETAILS)
+        else:
+            next_state = await determine_next_state(current_state, query.data)
     
     user_states[user_id] = next_state
-    message = get_message_for_state(next_state, user_responses.get(user_id))
+    message = get_message_for_state(next_state, user_id)
     keyboard = get_keyboard_for_state(next_state)
     
-    await query.edit_message_text(text=message, reply_markup=keyboard)
+    # Send a new message instead of editing
+    await query.message.reply_text(text=message, reply_markup=keyboard)
+
+async def help_command(update: Update, context: CallbackContext) -> None:
+    """Handle the /help command."""
+    await update.message.reply_text(
+        "You can control me by sending these commands:\n"
+        "/start - Start a conversation\n"
+        "/help - Get help on how to use this bot"
+    )
 
 def main():
     """Main function to run the bot."""
