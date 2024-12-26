@@ -6,6 +6,8 @@ import os
 from dotenv import load_dotenv
 from enum import Enum, auto
 from typing import Dict, List, Optional
+from datetime import datetime, timedelta
+import re
 
 # Load env
 load_dotenv()
@@ -225,38 +227,177 @@ async def start(update: Update, context: CallbackContext) -> None:
     
     await update.message.reply_text(message, reply_markup=keyboard)
 
+async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[bool, str, any]:
+    """
+    Use GPT to validate and interpret user input based on the current state.
+    Returns (is_valid, message, processed_value)
+    """
+    try:
+        # Construct context-aware prompt based on the current state
+        state_contexts = {
+            ConversationState.WHO_TRAVELLING: {
+                "valid_options": ["solo", "family"],
+                "prompt": "User is choosing between solo or family travel. Is their response valid? If valid, categorize as 'solo' or 'family'. If invalid, explain why."
+            },
+            ConversationState.TRIP_TYPE: {
+                "valid_options": ["single", "annual"],
+                "prompt": "User is choosing between single trip or annual coverage. Is their response valid? If valid, categorize as 'single' or 'annual'. If invalid, explain why."
+            },
+            ConversationState.DESTINATION: {
+                "prompt": "User is entering a country name. If it's ambiguous (like 'ind'), ask for clarification. If it's clear, confirm the country. If invalid, explain why."
+            },
+            ConversationState.TRAVEL_DATE: {
+                "prompt": "User is entering a travel date. Is it a valid date format? If valid, confirm the date. If invalid, ask for a clearer date format."
+            },
+            ConversationState.ADVENTURE_ACTIVITIES: {
+                "valid_options": ["yes", "no"],
+                "prompt": "User is choosing whether they need adventure activities coverage (yes/no). Is their response valid? If valid, categorize as 'yes' or 'no'. If invalid, explain why."
+            },
+            ConversationState.MEDICAL_CONDITIONS: {
+                "valid_options": ["yes", "no"],
+                "prompt": "User is indicating if they have medical conditions (yes/no). Is their response valid? If valid, categorize as 'yes' or 'no'. If invalid, explain why."
+            }
+        }
+
+        # Check for "go back" intent first
+        back_response = await client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "Determine if the user wants to go back to the previous question. Respond with only 'yes' or 'no'."},
+                {"role": "user", "content": f"Does this message indicate the user wants to go back: '{user_input}'"}
+            ]
+        )
+        
+        if 'yes' in back_response.choices[0].message.content.lower():
+            return (True, "Going back to previous question...", 'go_back')
+        
+        # Special handling for travel date
+        if state == ConversationState.TRAVEL_DATE:
+            current_date = datetime.now()
+            
+            date_system_prompt = f"""
+            Current date: {current_date.strftime('%Y-%m-%d')}
+            
+            Parse the user's travel date input and validate it according to these rules:
+            1. Date must be in the future (after {current_date.strftime('%Y-%m-%d')})
+            2. If year is not specified, assume {current_date.year} if the date would be in the future, otherwise assume {current_date.year + 1}
+            3. If only date and month are provided, determine the appropriate year based on rule 2
+            4. Accept various date formats (e.g., "25 Dec", "December 25", "25/12", "next month", "tomorrow")
+            
+            Respond in JSON format:
+            {{
+                "is_valid": true/false,
+                "message": "explanation or clarification message",
+                "processed_value": "YYYY-MM-DD formatted date if valid, null if invalid",
+                "needs_year_confirmation": true/false
+            }}
+            
+            For example:
+            - "25 Dec" → Determine year based on whether Dec 25 this year is in the future
+            - "next month" → Convert to specific date
+            - "tomorrow" → Convert to specific date
+            - "25/12" → Same as "25 Dec"
+            """
+
+            response = await client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": date_system_prompt},
+                    {"role": "user", "content": user_input}
+                ]
+            )
+            
+            import json
+            result = json.loads(response.choices[0].message.content)
+            
+            # If valid but needs year confirmation, ask user
+            if result["is_valid"] and result.get("needs_year_confirmation", False):
+                try:
+                    date_obj = datetime.strptime(result["processed_value"], "%Y-%m-%d")
+                    return (False, 
+                           f"I understand you want to travel on {date_obj.strftime('%d %B')}, "
+                           f"is that {date_obj.year}? Please confirm the year.", None)
+                except ValueError:
+                    return (False, "Please specify the year for your travel date.", None)
+            
+            return (result["is_valid"], result["message"], result["processed_value"])
+
+        # Get state context
+        context = state_contexts.get(state, {"prompt": "Validate if this is a reasonable response."})
+        
+        # Create detailed prompt for GPT
+        system_prompt = f"""
+        Current question state: {state.name}
+        {context['prompt']}
+        
+        Respond in JSON format:
+        {{
+            "is_valid": true/false,
+            "message": "explanation or clarification question",
+            "processed_value": "normalized value if valid, null if invalid"
+        }}
+        """
+
+        response = await client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_input}
+            ]
+        )
+        
+        # Parse GPT's response
+        import json
+        result = json.loads(response.choices[0].message.content)
+        
+        return (result["is_valid"], result["message"], result["processed_value"])
+
+    except Exception as e:
+        logger.error(f"Error in validate_with_gpt: {e}")
+        return (False, "Sorry, I couldn't validate your input. Please try again.", None)
+
 async def handle_message(update: Update, context: CallbackContext) -> None:
     """Handle text messages."""
     user_id = update.effective_user.id
     user_input = update.message.text
     current_state = user_states.get(user_id, ConversationState.START)
     
-    # Store user response
-    if current_state not in [ConversationState.START, ConversationState.LEARN_MORE]:
-        user_responses.setdefault(user_id, {})
-        user_responses[user_id][current_state] = user_input
+    # Validate input using GPT
+    is_valid, validation_message, processed_value = await validate_with_gpt(current_state, user_input)
     
-    # Get AI assistance for understanding user input
-    context_str = f"Current state: {current_state}, User input: {user_input}"
-    ai_interpretation = await chat_with_ai(
-        f"Based on the user's message '{user_input}', help interpret their intent in the context of {current_state}.",
-        context_str
-    )
+    if not is_valid:
+        # If input is invalid, send validation message and keep same state
+        keyboard = get_keyboard_for_state(current_state)
+        await update.message.reply_text(
+            validation_message + "\n\n" + get_message_for_state(current_state, user_id),
+            reply_markup=keyboard
+        )
+        return
     
-    # Determine next state
-    next_state = await determine_next_state(current_state, user_input)
-    
-    # If going back, remove the last response
-    if next_state != current_state and next_state in user_responses.get(user_id, {}):
-        del user_responses[user_id][current_state]
+    # Handle "go back" command
+    if processed_value == 'go_back':
+        next_state = await determine_next_state(current_state, 'back')
+        if current_state in user_responses.get(user_id, {}):
+            del user_responses[user_id][current_state]
+    else:
+        # Store validated response
+        if current_state not in [ConversationState.START, ConversationState.LEARN_MORE]:
+            user_responses.setdefault(user_id, {})
+            user_responses[user_id][current_state] = processed_value
+            
+        next_state = await determine_next_state(current_state, processed_value)
     
     user_states[user_id] = next_state
+    
+    # If validation message exists and it's not just a simple confirmation,
+    # show it before the next question
+    if validation_message and not validation_message.startswith("Valid"):
+        await update.message.reply_text(validation_message)
     
     # Get appropriate message and keyboard for next state
     message = get_message_for_state(next_state, user_id)
     keyboard = get_keyboard_for_state(next_state)
     
-    # Send a new message instead of editing
     await update.message.reply_text(message, reply_markup=keyboard)
 
 async def button_handler(update: Update, context: CallbackContext) -> None:
