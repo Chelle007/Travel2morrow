@@ -274,15 +274,17 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
         # Special handling for travel date
         if state == ConversationState.TRAVEL_DATE:
             current_date = datetime.now()
+            ninety_days_later = current_date + timedelta(days=90)
             
             date_system_prompt = f"""
             Current date: {current_date.strftime('%Y-%m-%d')}
             
             Parse the user's travel date input and validate it according to these rules:
             1. Date must be in the future (after {current_date.strftime('%Y-%m-%d')})
-            2. If year is not specified, assume {current_date.year} if the date would be in the future, otherwise assume {current_date.year + 1}
-            3. If only date and month are provided, determine the appropriate year based on rule 2
-            4. Accept various date formats (e.g., "25 Dec", "December 25", "25/12", "next month", "tomorrow")
+            2. Date must not exceed 90 days later (must be before {ninety_days_later.strftime('%Y-%m-%d')})
+            3. If year is not specified, assume {current_date.year} if the date would be in the future, otherwise assume {current_date.year + 1}
+            4. If only date and month are provided, determine the appropriate year based on rule 2
+            5. Accept various date formats (e.g., "25 Dec", "December 25", "25/12", "next month", "tomorrow")
             
             Respond in JSON format:
             {{
