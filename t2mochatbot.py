@@ -1,4 +1,4 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Contact
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
 from openai import AsyncOpenAI
 import logging
@@ -7,7 +7,8 @@ from dotenv import load_dotenv
 from enum import Enum, auto
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
-import re
+import psycopg2
+import uuid
 
 # Load env
 load_dotenv()
@@ -30,6 +31,7 @@ class ConversationState(Enum):
     TRIP_TYPE = auto()
     DESTINATION = auto()
     TRAVEL_DATE = auto()
+    PHONE_NUMBER = auto()
     ADVENTURE_ACTIVITIES = auto()
     ADVENTURE_DETAILS = auto()
     MEDICAL_CONDITIONS = auto()
@@ -61,11 +63,95 @@ response_labels = {
     'budget_50': 'Under $50',
     'budget_100': '$50-$100',
     'budget_above': 'Above $100',
+    'go_back': 'Go Back',
     'view_policy': 'View policy details',
     'update_policy': 'Update policy',
     'file_claim': 'File a claim'
 }
 
+def get_database_connection():
+    try:
+        connection = psycopg2.connect(
+            host=os.getenv("DB_HOST"),
+            port=os.getenv("DB_PORT"),
+            database=os.getenv("DB_NAME"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD")
+        )
+        print("Database connection successful!")
+        return connection
+    except Exception as e:
+        print(f"Error connecting to the database: {e}")
+        return None
+
+def save_user_responses(connection, user_id: int, responses: dict) -> Optional[str]:
+    """Save user responses to the database."""
+    try:
+        cursor = connection.cursor()
+        
+        # Generate UUID for the database
+        db_user_id = str(uuid.uuid4())
+        
+        # Extract values from responses
+        trip_type = responses.get(ConversationState.TRIP_TYPE)
+        adventure_activities = responses.get(ConversationState.ADVENTURE_ACTIVITIES) == 'adventure_yes'
+        adventure_details = responses.get(ConversationState.ADVENTURE_DETAILS)
+        medical_conditions = responses.get(ConversationState.MEDICAL_CONDITIONS) == 'medical_yes'
+        medical_details = responses.get(ConversationState.MEDICAL_DETAILS)
+        budget = responses.get(ConversationState.BUDGET)
+        additional_coverage = responses.get(ConversationState.ADDITIONAL_COVERAGE)
+        
+        # Map budget values to database format
+        budget_mapping = {
+            'budget_50': 'Under $50',
+            'budget_100': '$50-$100',
+            'budget_above': 'Above $100'
+        }
+        budget_value = budget_mapping.get(budget) if budget else None
+        
+        # Map additional coverage values to readable format
+        coverage_mapping = {
+            'coverage_interruption': 'Trip Interruption',
+            'coverage_luggage': 'Lost Luggage',
+            'coverage_delays': 'Travel Delays',
+            'coverage_none': 'No Additional Coverage'
+        }
+        coverage_value = coverage_mapping.get(additional_coverage) if additional_coverage else None
+        
+        # Insert query
+        query = """
+        INSERT INTO users (
+            user_id, phone_number, trip_type, adventure_activities, 
+            adventure_details, medical_conditions, medical_details, 
+            budget, additional_coverage
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        
+        # Execute query with values
+        cursor.execute(query, (
+            db_user_id,
+            'Not provided',  # Phone number placeholder
+            trip_type,
+            adventure_activities,
+            adventure_details,
+            medical_conditions,
+            medical_details,
+            budget_value,
+            coverage_value
+        ))
+        
+        connection.commit()
+        cursor.close()
+
+        logger.info(f"Added to database: {db_user_id}")
+        
+        return db_user_id
+        
+    except Exception as e:
+        logger.error(f"Error saving to database: {e}")
+        connection.rollback()
+        return None
+    
 def format_choice_history(user_id: int) -> str:
     """Format the user's choice history into a readable summary."""
     if user_id not in user_responses or not user_responses[user_id]:
@@ -123,6 +209,12 @@ def get_keyboard_for_state(state: ConversationState) -> Optional[InlineKeyboardM
             [InlineKeyboardButton("$50-$100", callback_data='budget_100')],
             [InlineKeyboardButton("Above $100", callback_data='budget_above')]
         ],
+        ConversationState.ADDITIONAL_COVERAGE: [
+            [InlineKeyboardButton("Trip Interruption", callback_data='coverage_interruption')],
+            [InlineKeyboardButton("Lost Luggage", callback_data='coverage_luggage')],
+            [InlineKeyboardButton("Travel Delays", callback_data='coverage_delays')],
+            [InlineKeyboardButton("No Additional Coverage", callback_data='coverage_none')]
+        ],
         ConversationState.MANAGE_INSURANCE: [
             [InlineKeyboardButton("View existing policy details", callback_data='view_policy')],
             [InlineKeyboardButton("Update policy information", callback_data='update_policy')],
@@ -132,7 +224,6 @@ def get_keyboard_for_state(state: ConversationState) -> Optional[InlineKeyboardM
     
     keyboard = keyboards.get(state)
     if keyboard and state != ConversationState.START:
-        # Add "Go Back" button to all screens except START
         keyboard.append([InlineKeyboardButton("◀️ Go Back", callback_data='go_back')])
     
     return InlineKeyboardMarkup(keyboard) if keyboard else None
@@ -172,9 +263,9 @@ async def determine_next_state(current_state: ConversationState, user_input: str
             ConversationState.MEDICAL_CONDITIONS: ConversationState.ADVENTURE_ACTIVITIES,
             ConversationState.MEDICAL_DETAILS: ConversationState.MEDICAL_CONDITIONS,
             ConversationState.BUDGET: ConversationState.MEDICAL_CONDITIONS,
-            ConversationState.RECOMMENDATION: ConversationState.BUDGET,
-            ConversationState.ADDITIONAL_COVERAGE: ConversationState.RECOMMENDATION,
-            ConversationState.QUESTIONS: ConversationState.ADDITIONAL_COVERAGE
+            ConversationState.ADDITIONAL_COVERAGE: ConversationState.BUDGET,
+            ConversationState.RECOMMENDATION: ConversationState.ADDITIONAL_COVERAGE,
+            ConversationState.QUESTIONS: ConversationState.RECOMMENDATION
         }
         return previous_states.get(current_state, current_state)
     
@@ -189,9 +280,9 @@ async def determine_next_state(current_state: ConversationState, user_input: str
         ConversationState.ADVENTURE_DETAILS: ConversationState.MEDICAL_CONDITIONS,
         ConversationState.MEDICAL_CONDITIONS: ConversationState.BUDGET,
         ConversationState.MEDICAL_DETAILS: ConversationState.BUDGET,
-        ConversationState.BUDGET: ConversationState.RECOMMENDATION,
-        ConversationState.RECOMMENDATION: ConversationState.ADDITIONAL_COVERAGE,
-        ConversationState.ADDITIONAL_COVERAGE: ConversationState.QUESTIONS,
+        ConversationState.BUDGET: ConversationState.ADDITIONAL_COVERAGE,
+        ConversationState.ADDITIONAL_COVERAGE: ConversationState.RECOMMENDATION,
+        ConversationState.RECOMMENDATION: ConversationState.QUESTIONS,
     }
     return next_states.get(current_state, current_state)
 
@@ -215,17 +306,6 @@ async def chat_with_ai(user_input: str, context: str = "") -> str:
     except Exception as e:
         logger.error(f"Error with OpenAI API: {e}")
         return "Sorry, I encountered an error. Please try again later."
-
-async def start(update: Update, context: CallbackContext) -> None:
-    """Handle the /start command."""
-    user_id = update.effective_user.id
-    user_states[user_id] = ConversationState.START
-    user_responses[user_id] = {}
-    
-    keyboard = get_keyboard_for_state(ConversationState.START)
-    message = get_message_for_state(ConversationState.START, user_id)
-    
-    await update.message.reply_text(message, reply_markup=keyboard)
 
 async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[bool, str, any]:
     """
@@ -364,11 +444,9 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     user_input = update.message.text
     current_state = user_states.get(user_id, ConversationState.START)
     
-    # Validate input using GPT
     is_valid, validation_message, processed_value = await validate_with_gpt(current_state, user_input)
     
     if not is_valid:
-        # If input is invalid, send validation message and keep same state
         keyboard = get_keyboard_for_state(current_state)
         await update.message.reply_text(
             validation_message + "\n\n" + get_message_for_state(current_state, user_id),
@@ -376,27 +454,31 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
         )
         return
     
-    # Handle "go back" command
     if processed_value == 'go_back':
         next_state = await determine_next_state(current_state, 'back')
         if current_state in user_responses.get(user_id, {}):
             del user_responses[user_id][current_state]
     else:
-        # Store validated response
         if current_state not in [ConversationState.START, ConversationState.LEARN_MORE]:
             user_responses.setdefault(user_id, {})
             user_responses[user_id][current_state] = processed_value
             
         next_state = await determine_next_state(current_state, processed_value)
     
+    # Save to database when reaching recommendation state
+    if next_state == ConversationState.RECOMMENDATION:
+        connection = get_database_connection()
+        if connection:
+            db_user_id = save_user_responses(connection, user_id, user_responses.get(user_id, {}))
+            if db_user_id:
+                context.user_data['db_user_id'] = db_user_id
+            connection.close()
+    
     user_states[user_id] = next_state
     
-    # If validation message exists and it's not just a simple confirmation,
-    # show it before the next question
     if validation_message and not validation_message.startswith("Valid"):
         await update.message.reply_text(validation_message)
     
-    # Get appropriate message and keyboard for next state
     message = get_message_for_state(next_state, user_id)
     keyboard = get_keyboard_for_state(next_state)
     
@@ -410,23 +492,19 @@ async def button_handler(update: Update, context: CallbackContext) -> None:
     
     await query.answer()
     
-    # Create a message showing what the user selected
     selected_option = response_labels.get(query.data, query.data)
     user_selection_message = f"Selected: {selected_option}"
     await query.message.reply_text(user_selection_message)
     
-    # Handle "Go Back" button
     if query.data == 'go_back':
         next_state = await determine_next_state(current_state, 'back')
         if current_state in user_responses.get(user_id, {}):
             del user_responses[user_id][current_state]
     else:
-        # Store user response
         if current_state not in [ConversationState.START, ConversationState.LEARN_MORE]:
             user_responses.setdefault(user_id, {})
             user_responses[user_id][current_state] = query.data
         
-        # Handle specific button actions
         if query.data == 'explore':
             next_state = ConversationState.WHO_TRAVELLING
         elif query.data == 'manage':
@@ -439,12 +517,31 @@ async def button_handler(update: Update, context: CallbackContext) -> None:
         else:
             next_state = await determine_next_state(current_state, query.data)
     
+    # Save to database when reaching recommendation state
+    if next_state == ConversationState.RECOMMENDATION:
+        connection = get_database_connection()
+        if connection:
+            db_user_id = save_user_responses(connection, user_id, user_responses.get(user_id, {}))
+            if db_user_id:
+                context.user_data['db_user_id'] = db_user_id
+            connection.close()
+    
     user_states[user_id] = next_state
     message = get_message_for_state(next_state, user_id)
     keyboard = get_keyboard_for_state(next_state)
     
-    # Send a new message instead of editing
     await query.message.reply_text(text=message, reply_markup=keyboard)
+
+async def start(update: Update, context: CallbackContext) -> None:
+    """Handle the /start command."""
+    user_id = update.effective_user.id
+    user_states[user_id] = ConversationState.START
+    user_responses[user_id] = {}
+    
+    keyboard = get_keyboard_for_state(ConversationState.START)
+    message = get_message_for_state(ConversationState.START, user_id)
+    
+    await update.message.reply_text(message, reply_markup=keyboard)
 
 async def help_command(update: Update, context: CallbackContext) -> None:
     """Handle the /help command."""
