@@ -93,6 +93,7 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
         db_user_id = str(uuid.uuid4())
         
         # Extract values from responses
+        who_travelling = responses.get(ConversationState.WHO_TRAVELLING)
         trip_type = responses.get(ConversationState.TRIP_TYPE)
         adventure_activities = responses.get(ConversationState.ADVENTURE_ACTIVITIES) == 'adventure_yes'
         adventure_details = responses.get(ConversationState.ADVENTURE_DETAILS)
@@ -121,7 +122,7 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
         # Insert query
         query = """
         INSERT INTO users (
-            user_id, phone_number, trip_type, adventure_activities, 
+            user_id, phone_number, who_travelling, trip_type, adventure_activities, 
             adventure_details, medical_conditions, medical_details, 
             budget, additional_coverage
         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -131,6 +132,7 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
         cursor.execute(query, (
             db_user_id,
             'Not provided',  # Phone number placeholder
+            who_travelling,
             trip_type,
             adventure_activities,
             adventure_details,
