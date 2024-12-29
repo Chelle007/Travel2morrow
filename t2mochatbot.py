@@ -1,4 +1,4 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Contact
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
 from openai import AsyncOpenAI
 import logging
@@ -31,7 +31,6 @@ class ConversationState(Enum):
     TRIP_TYPE = auto()
     DESTINATION = auto()
     TRAVEL_DATE = auto()
-    PHONE_NUMBER = auto()
     ADVENTURE_ACTIVITIES = auto()
     ADVENTURE_DETAILS = auto()
     MEDICAL_CONDITIONS = auto()
@@ -85,14 +84,17 @@ def get_database_connection():
         return None
 
 def save_user_responses(connection, user_id: int, responses: dict) -> Optional[str]:
-    """Save user responses to the database."""
+    """Save or update user responses in the database."""
     try:
         cursor = connection.cursor()
-        
-        # Generate UUID for the database
-        db_user_id = str(uuid.uuid4())
-        
-        # Extract values from responses
+
+        # Extract the telegram_handle from responses
+        telegram_handle = responses.get('telegram_handle')
+        if not telegram_handle:
+            logger.error("No telegram_handle provided in responses.")
+            return None
+
+        # Extract other values from responses
         who_travelling = responses.get(ConversationState.WHO_TRAVELLING)
         trip_type = responses.get(ConversationState.TRIP_TYPE)
         adventure_activities = responses.get(ConversationState.ADVENTURE_ACTIVITIES) == 'adventure_yes'
@@ -101,7 +103,7 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
         medical_details = responses.get(ConversationState.MEDICAL_DETAILS)
         budget = responses.get(ConversationState.BUDGET)
         additional_coverage = responses.get(ConversationState.ADDITIONAL_COVERAGE)
-        
+
         # Map budget values to database format
         budget_mapping = {
             'budget_50': 'Under $50',
@@ -109,7 +111,7 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
             'budget_above': 'Above $100'
         }
         budget_value = budget_mapping.get(budget) if budget else None
-        
+
         # Map additional coverage values to readable format
         coverage_mapping = {
             'coverage_interruption': 'Trip Interruption',
@@ -118,35 +120,66 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
             'coverage_none': 'No Additional Coverage'
         }
         coverage_value = coverage_mapping.get(additional_coverage) if additional_coverage else None
-        
-        # Insert query
-        query = """
-        INSERT INTO users (
-            user_id, phone_number, who_travelling, trip_type, adventure_activities, 
-            adventure_details, medical_conditions, medical_details, 
-            budget, additional_coverage
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
-        
-        # Execute query with values
-        cursor.execute(query, (
-            db_user_id,
-            'Not provided',  # Phone number placeholder
-            who_travelling,
-            trip_type,
-            adventure_activities,
-            adventure_details,
-            medical_conditions,
-            medical_details,
-            budget_value,
-            coverage_value
-        ))
-        
+
+        # Check if the telegram_handle already exists
+        check_query = "SELECT user_id FROM users WHERE telegram_handle = %s"
+        cursor.execute(check_query, (telegram_handle,))
+        existing_user = cursor.fetchone()
+
+        if existing_user:
+            # Update the existing row
+            update_query = """
+            UPDATE users
+            SET who_travelling = %s,
+                trip_type = %s,
+                adventure_activities = %s,
+                adventure_details = %s,
+                medical_conditions = %s,
+                medical_details = %s,
+                budget = %s,
+                additional_coverage = %s
+            WHERE telegram_handle = %s
+            """
+            cursor.execute(update_query, (
+                who_travelling,
+                trip_type,
+                adventure_activities,
+                adventure_details,
+                medical_conditions,
+                medical_details,
+                budget_value,
+                coverage_value,
+                telegram_handle
+            ))
+            db_user_id = existing_user[0]
+            logger.info(f"Updated existing user: {db_user_id}")
+        else:
+            # Insert a new row
+            db_user_id = str(uuid.uuid4())
+            insert_query = """
+            INSERT INTO users (
+                user_id, telegram_handle, who_travelling, trip_type, 
+                adventure_activities, adventure_details, medical_conditions, 
+                medical_details, budget, additional_coverage
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(insert_query, (
+                db_user_id,
+                telegram_handle,
+                who_travelling,
+                trip_type,
+                adventure_activities,
+                adventure_details,
+                medical_conditions,
+                medical_details,
+                budget_value,
+                coverage_value
+            ))
+            logger.info(f"Added to database: {db_user_id}")
+
         connection.commit()
         cursor.close()
 
-        logger.info(f"Added to database: {db_user_id}")
-        
         return db_user_id
         
     except Exception as e:
@@ -155,7 +188,7 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
         return None
     
 def format_choice_history(user_id: int) -> str:
-    """Format the user's choice history into a readable summary."""
+    """Format the user's choice history into a readable summary with neat alignment."""
     if user_id not in user_responses or not user_responses[user_id]:
         return ""
     
@@ -172,11 +205,15 @@ def format_choice_history(user_id: int) -> str:
         ConversationState.BUDGET: "Budget"
     }
     
+    # Find the maximum label length for consistent alignment
+    max_label_length = max(len(label) for label in state_labels.values())
+    
     for state, response in user_responses[user_id].items():
         if state in state_labels:
             label = state_labels[state]
             value = response_labels.get(response, response)
-            history.append(f"{label}: {value}")
+            # Align using spaces for consistency
+            history.append(f"{label:<{max_label_length}} : {value}")
     
     if not history:
         return ""
@@ -257,6 +294,7 @@ async def determine_next_state(current_state: ConversationState, user_input: str
     if user_input.lower() in ['back', 'go_back', 'previous']:
         # Define state transitions for going back
         previous_states = {
+            ConversationState.WHO_TRAVELLING: ConversationState.START,
             ConversationState.TRIP_TYPE: ConversationState.WHO_TRAVELLING,
             ConversationState.DESTINATION: ConversationState.TRIP_TYPE,
             ConversationState.TRAVEL_DATE: ConversationState.DESTINATION,
@@ -539,6 +577,11 @@ async def start(update: Update, context: CallbackContext) -> None:
     user_id = update.effective_user.id
     user_states[user_id] = ConversationState.START
     user_responses[user_id] = {}
+    
+    # Store telegram handle automatically at start
+    username = update.effective_user.username
+    if username:
+        user_responses[user_id]['telegram_handle'] = f"@{username}"
     
     keyboard = get_keyboard_for_state(ConversationState.START)
     message = get_message_for_state(ConversationState.START, user_id)

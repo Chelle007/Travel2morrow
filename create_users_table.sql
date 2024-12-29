@@ -2,11 +2,12 @@
 DROP TABLE IF EXISTS users;
 
 -- Create the new users table with the who_traveling field
-CREATE TYPE who_travelling_type AS ENUM ('solo', 'family');
+-- CREATE TYPE who_travelling_type AS ENUM ('solo', 'family');
 
 CREATE TABLE users (
     user_id UUID PRIMARY KEY,                     -- Primary key, uniquely identifies the user
-    telegram_handle VARCHAR(15) NOT NULL,            -- Phone number of the user
+    telegram_handle VARCHAR(15) NOT NULL,         
+	phone_number VARCHAR(15),
     who_travelling who_travelling_type NOT NULL DEFAULT 'solo',  -- Enum type for who is traveling (solo or family)
     trip_type VARCHAR(10) CHECK (trip_type IN ('single', 'annual')),  -- Trip type (single or annual)
     adventure_activities BOOLEAN NOT NULL,        -- Indicates if the user participates in adventure activities
