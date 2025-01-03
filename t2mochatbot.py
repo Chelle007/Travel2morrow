@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 class ConversationState(Enum):
     START = auto()
+    DEFAULT_ANSWER = auto()
     WHO_TRAVELLING = auto()
     TRIP_TYPE = auto()
     DESTINATION = auto()
@@ -51,6 +52,8 @@ response_labels = {
     'explore': 'Explore travel insurance options',
     'manage': 'Manage existing insurance',
     'learn': 'Learn more about Travel2morrow',
+    'default_yes': 'Yes',
+    'default_no': 'No',
     'solo': 'Solo traveler',
     'family': 'Family',
     'single': 'Single trip',
@@ -186,39 +189,110 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
         logger.error(f"Error saving to database: {e}")
         connection.rollback()
         return None
-    
-def format_choice_history(user_id: int) -> str:
-    """Format the user's choice history into a readable summary with neat alignment."""
-    if user_id not in user_responses or not user_responses[user_id]:
+
+def get_user_saved_responses(connection, telegram_handle: str) -> Optional[dict]:
+    """Fetch saved responses for a user from the database."""
+    try:
+        cursor = connection.cursor()
+        query = """
+        SELECT who_travelling, trip_type, adventure_activities, 
+               adventure_details, medical_conditions, medical_details,
+               budget, additional_coverage
+        FROM users 
+        WHERE telegram_handle = %s
+        """
+        cursor.execute(query, (telegram_handle,))
+        result = cursor.fetchone()
+        cursor.close()
+
+        if result:
+            # Map database values back to callback_data format
+            budget_mapping = {
+                'Under $50': 'budget_50',
+                '$50-$100': 'budget_100',
+                'Above $100': 'budget_above'
+            }
+            
+            coverage_mapping = {
+                'Trip Interruption': 'coverage_interruption',
+                'Lost Luggage': 'coverage_luggage',
+                'Travel Delays': 'coverage_delays',
+                'No Additional Coverage': 'coverage_none'
+            }
+            
+            return {
+                ConversationState.WHO_TRAVELLING: result[0].lower() if result[0] else None,
+                ConversationState.TRIP_TYPE: result[1].lower() if result[1] else None,
+                ConversationState.ADVENTURE_ACTIVITIES: 'adventure_yes' if result[2] else 'adventure_no',
+                ConversationState.ADVENTURE_DETAILS: result[3],
+                ConversationState.MEDICAL_CONDITIONS: 'medical_yes' if result[4] else 'medical_no',
+                ConversationState.MEDICAL_DETAILS: result[5],
+                ConversationState.BUDGET: budget_mapping.get(result[6]),
+                ConversationState.ADDITIONAL_COVERAGE: coverage_mapping.get(result[7])
+            }
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching saved responses: {e}")
+        return None
+
+def format_saved_responses(saved_responses: dict) -> str:
+    """Format saved responses into a readable summary."""
+    if not saved_responses:
         return ""
     
-    history = []
+    formatted = ["Here are your previous answers:"]
     state_labels = {
         ConversationState.WHO_TRAVELLING: "Who's travelling",
         ConversationState.TRIP_TYPE: "Trip type",
-        ConversationState.DESTINATION: "Destination",
-        ConversationState.TRAVEL_DATE: "Travel date",
         ConversationState.ADVENTURE_ACTIVITIES: "Adventure activities",
         ConversationState.ADVENTURE_DETAILS: "Adventure details",
         ConversationState.MEDICAL_CONDITIONS: "Medical conditions",
         ConversationState.MEDICAL_DETAILS: "Medical details",
-        ConversationState.BUDGET: "Budget"
+        ConversationState.BUDGET: "Budget",
+        ConversationState.ADDITIONAL_COVERAGE: "Additional coverage"
     }
     
-    # Find the maximum label length for consistent alignment
-    max_label_length = max(len(label) for label in state_labels.values())
-    
-    for state, response in user_responses[user_id].items():
-        if state in state_labels:
+    for state, value in saved_responses.items():
+        if state in state_labels and value:
             label = state_labels[state]
-            value = response_labels.get(response, response)
-            # Align using spaces for consistency
-            history.append(f"{label:<{max_label_length}} : {value}")
+            display_value = response_labels.get(value, value)
+            formatted.append(f"{label}: {display_value}")
     
-    if not history:
-        return ""
+    return "\n".join(formatted)
+
+# def format_choice_history(user_id: int) -> str:
+#     """Format the user's choice history into a readable summary with neat alignment."""
+#     if user_id not in user_responses or not user_responses[user_id]:
+#         return ""
     
-    return "Your choices so far:\n" + "\n".join(history) + "\n\n"
+#     history = []
+#     state_labels = {
+#         ConversationState.WHO_TRAVELLING: "Who's travelling",
+#         ConversationState.DEFAULT_ANSWER: "Default answer",
+#         ConversationState.TRIP_TYPE: "Trip type",
+#         ConversationState.DESTINATION: "Destination",
+#         ConversationState.TRAVEL_DATE: "Travel date",
+#         ConversationState.ADVENTURE_ACTIVITIES: "Adventure activities",
+#         ConversationState.ADVENTURE_DETAILS: "Adventure details",
+#         ConversationState.MEDICAL_CONDITIONS: "Medical conditions",
+#         ConversationState.MEDICAL_DETAILS: "Medical details",
+#         ConversationState.BUDGET: "Budget"
+#     }
+    
+#     # Find the maximum label length for consistent alignment
+#     # max_label_length = max(len(label) for label in state_labels.values())
+    
+#     for state, response in user_responses[user_id].items():
+#         if state in state_labels:
+#             label = state_labels[state]
+#             value = response_labels.get(response, response)
+#             # Align using spaces for consistency
+#             history.append(f"{label}: {value}")
+    
+#     if not history:
+#         return ""
+    
+#     return "Your choices so far:\n" + "\n".join(history) + "\n\n"
 
 def get_keyboard_for_state(state: ConversationState) -> Optional[InlineKeyboardMarkup]:
     keyboards = {
@@ -226,6 +300,10 @@ def get_keyboard_for_state(state: ConversationState) -> Optional[InlineKeyboardM
             [InlineKeyboardButton("Explore travel insurance options", callback_data='explore')],
             [InlineKeyboardButton("Manage my existing travel insurance", callback_data='manage')],
             [InlineKeyboardButton("Learn more about Travel2morrow", callback_data='learn')]
+        ],
+        ConversationState.DEFAULT_ANSWER: [
+            [InlineKeyboardButton("Yes", callback_data='default_yes')],
+            [InlineKeyboardButton("No", callback_data='default_no')]
         ],
         ConversationState.WHO_TRAVELLING: [
             [InlineKeyboardButton("Solo", callback_data='solo')],
@@ -270,6 +348,7 @@ def get_keyboard_for_state(state: ConversationState) -> Optional[InlineKeyboardM
 def get_message_for_state(state: ConversationState, user_id: int) -> str:
     messages = {
         ConversationState.START: "Hi! Welcome to Travel2morrow. How can I assist you today?",
+        ConversationState.DEFAULT_ANSWER: "Would you like to use the default answers?",
         ConversationState.WHO_TRAVELLING: "Who's travelling?",
         ConversationState.TRIP_TYPE: "Single trip or annual?",
         ConversationState.DESTINATION: "Which country are you going to?",
@@ -287,25 +366,21 @@ def get_message_for_state(state: ConversationState, user_id: int) -> str:
     }
     
     base_message = messages.get(state, "How can I help you?")
-    history = format_choice_history(user_id)
-    return f"{history}{base_message}"
+    return f"{base_message}"
 
 async def determine_next_state(current_state: ConversationState, user_input: str) -> ConversationState:
+    """Determine the next state based on current state and user input."""
     if user_input.lower() in ['back', 'go_back', 'previous']:
         # Define state transitions for going back
         previous_states = {
+            ConversationState.DEFAULT_ANSWER: ConversationState.START,
             ConversationState.WHO_TRAVELLING: ConversationState.START,
             ConversationState.TRIP_TYPE: ConversationState.WHO_TRAVELLING,
             ConversationState.DESTINATION: ConversationState.TRIP_TYPE,
             ConversationState.TRAVEL_DATE: ConversationState.DESTINATION,
-            ConversationState.ADVENTURE_ACTIVITIES: ConversationState.TRAVEL_DATE,
-            ConversationState.ADVENTURE_DETAILS: ConversationState.ADVENTURE_ACTIVITIES,
-            ConversationState.MEDICAL_CONDITIONS: ConversationState.ADVENTURE_ACTIVITIES,
-            ConversationState.MEDICAL_DETAILS: ConversationState.MEDICAL_CONDITIONS,
-            ConversationState.BUDGET: ConversationState.MEDICAL_CONDITIONS,
+            ConversationState.BUDGET: ConversationState.TRAVEL_DATE,
             ConversationState.ADDITIONAL_COVERAGE: ConversationState.BUDGET,
-            ConversationState.RECOMMENDATION: ConversationState.ADDITIONAL_COVERAGE,
-            ConversationState.QUESTIONS: ConversationState.RECOMMENDATION
+            ConversationState.RECOMMENDATION: ConversationState.ADDITIONAL_COVERAGE
         }
         return previous_states.get(current_state, current_state)
     
@@ -315,14 +390,9 @@ async def determine_next_state(current_state: ConversationState, user_input: str
         ConversationState.WHO_TRAVELLING: ConversationState.TRIP_TYPE,
         ConversationState.TRIP_TYPE: ConversationState.DESTINATION,
         ConversationState.DESTINATION: ConversationState.TRAVEL_DATE,
-        ConversationState.TRAVEL_DATE: ConversationState.ADVENTURE_ACTIVITIES,
-        ConversationState.ADVENTURE_ACTIVITIES: ConversationState.MEDICAL_CONDITIONS,
-        ConversationState.ADVENTURE_DETAILS: ConversationState.MEDICAL_CONDITIONS,
-        ConversationState.MEDICAL_CONDITIONS: ConversationState.BUDGET,
-        ConversationState.MEDICAL_DETAILS: ConversationState.BUDGET,
+        ConversationState.TRAVEL_DATE: ConversationState.BUDGET,
         ConversationState.BUDGET: ConversationState.ADDITIONAL_COVERAGE,
         ConversationState.ADDITIONAL_COVERAGE: ConversationState.RECOMMENDATION,
-        ConversationState.RECOMMENDATION: ConversationState.QUESTIONS,
     }
     return next_states.get(current_state, current_state)
 
@@ -355,6 +425,14 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
     try:
         # Construct context-aware prompt based on the current state
         state_contexts = {
+            ConversationState.START: {
+                "valid_options": ["explore", "manage", "learn"],
+                "prompt": "User is choosing between explore travel insurance options, manage their existing travel insurance, or learn more about Travel2morrow. Is their response valid? If valid, categorize as 'solo' or 'family'. If invalid, explain why."
+            },
+            ConversationState.DEFAULT_ANSWER: {
+                "valid_options": ["yes", "no"],
+                "prompt": "User is choosing whether they want to use default answer (yes/no). Is their response valid? If valid, categorize as 'yes' or 'no'. If invalid, explain why."
+            },
             ConversationState.WHO_TRAVELLING: {
                 "valid_options": ["solo", "family"],
                 "prompt": "User is choosing between solo or family travel. Is their response valid? If valid, categorize as 'solo' or 'family'. If invalid, explain why."
@@ -364,7 +442,7 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
                 "prompt": "User is choosing between single trip or annual coverage. Is their response valid? If valid, categorize as 'single' or 'annual'. If invalid, explain why."
             },
             ConversationState.DESTINATION: {
-                "prompt": "User is entering a country name. If it's ambiguous (like 'ind'), ask for clarification. If it's clear, confirm the country. If invalid, explain why."
+                "prompt": "User is entering a country name. If it's ambiguous, ask for clarification. If it's clear, confirm the country. If invalid, explain why."
             },
             ConversationState.TRAVEL_DATE: {
                 "prompt": "User is entering a travel date. Is it a valid date format? If valid, confirm the date. If invalid, ask for a clearer date format."
@@ -409,7 +487,7 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
             Respond in JSON format:
             {{
                 "is_valid": true/false,
-                "message": "explanation or clarification message",
+                "message": "If it is valid, answer with this format: 'Selected: YYYY-MM-DD formatted date'. Else clarification question",
                 "processed_value": "YYYY-MM-DD formatted date if valid, null if invalid",
                 "needs_year_confirmation": true/false
             }}
@@ -455,7 +533,7 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
         Respond in JSON format:
         {{
             "is_valid": true/false,
-            "message": "explanation or clarification question",
+            "message": "If it is valid, answer with this format: 'Selected: user's choice'. Else clarification question",
             "processed_value": "normalized value if valid, null if invalid"
         }}
         """
@@ -531,31 +609,85 @@ async def button_handler(update: Update, context: CallbackContext) -> None:
     current_state = user_states.get(user_id, ConversationState.START)
     
     await query.answer()
-    
+
     selected_option = response_labels.get(query.data, query.data)
     user_selection_message = f"Selected: {selected_option}"
     await query.message.reply_text(user_selection_message)
     
-    if query.data == 'go_back':
-        next_state = await determine_next_state(current_state, 'back')
-        if current_state in user_responses.get(user_id, {}):
-            del user_responses[user_id][current_state]
-    else:
-        if current_state not in [ConversationState.START, ConversationState.LEARN_MORE]:
-            user_responses.setdefault(user_id, {})
-            user_responses[user_id][current_state] = query.data
+    # Handle 'explore' option from START state
+    if current_state == ConversationState.START and query.data == 'explore':
+        username = query.from_user.username
+        if username:
+            telegram_handle = f"@{username}"
+            connection = get_database_connection()
+            if connection:
+                saved_responses = get_user_saved_responses(connection, telegram_handle)
+                connection.close()
+                
+                if saved_responses:
+                    # Store saved responses in context for later use
+                    context.user_data['saved_responses'] = saved_responses
+                    
+                    # Show saved responses and ask if user wants to use them
+                    message = (
+                        f"{format_saved_responses(saved_responses)}\n\n"
+                        "Would you like to use these answers? "
+                        "You'll only need to provide destination and travel dates."
+                    )
+                    
+                    user_states[user_id] = ConversationState.DEFAULT_ANSWER
+                    keyboard = get_keyboard_for_state(ConversationState.DEFAULT_ANSWER)
+                    
+                    await query.message.reply_text(text=message, reply_markup=keyboard)
+                    return
         
-        if query.data == 'explore':
+        # If no saved responses, proceed with normal flow
+        next_state = ConversationState.WHO_TRAVELLING
+        
+    # Handle default answer choice
+    elif current_state == ConversationState.DEFAULT_ANSWER:
+        if query.data == 'default_yes':
+            # Use saved responses
+            saved_responses = context.user_data.get('saved_responses', {})
+            user_responses[user_id] = saved_responses.copy()
+            if 'telegram_handle' not in user_responses[user_id]:
+                user_responses[user_id]['telegram_handle'] = f"@{query.from_user.username}"
+                
+            # Skip to destination input
+            next_state = ConversationState.DESTINATION
+        elif query.data == 'default_no':
+            # Start fresh
+            user_responses[user_id] = {'telegram_handle': f"@{query.from_user.username}"}
             next_state = ConversationState.WHO_TRAVELLING
-        elif query.data == 'manage':
-            next_state = ConversationState.MANAGE_INSURANCE
-        elif query.data == 'learn':
-            next_state = ConversationState.LEARN_MORE
-        elif query.data in ['adventure_yes', 'medical_yes']:
-            next_state = (ConversationState.ADVENTURE_DETAILS if query.data == 'adventure_yes' 
-                         else ConversationState.MEDICAL_DETAILS)
+        elif query.data == 'go_back':
+            next_state = await determine_next_state(current_state, 'back')
+            if current_state in user_responses.get(user_id, {}):
+                del user_responses[user_id][current_state]
+    
+    # Handle other button callbacks
+    else:
+        if query.data == 'go_back':
+            next_state = await determine_next_state(current_state, 'back')
+            if current_state in user_responses.get(user_id, {}):
+                del user_responses[user_id][current_state]
         else:
-            next_state = await determine_next_state(current_state, query.data)
+            if current_state not in [ConversationState.START, ConversationState.LEARN_MORE]:
+                user_responses.setdefault(user_id, {})
+                user_responses[user_id][current_state] = query.data
+            
+            if query.data == 'manage':
+                next_state = ConversationState.MANAGE_INSURANCE
+            elif query.data == 'learn':
+                next_state = ConversationState.LEARN_MORE
+            else:
+                next_state = await determine_next_state(current_state, query.data)
+                
+                # Skip medical, activity details, etc
+                if next_state in [ConversationState.ADVENTURE_ACTIVITIES, 
+                                ConversationState.MEDICAL_CONDITIONS, 
+                                ConversationState.BUDGET, 
+                                ConversationState.ADDITIONAL_COVERAGE]:
+                    next_state = ConversationState.RECOMMENDATION
     
     # Save to database when reaching recommendation state
     if next_state == ConversationState.RECOMMENDATION:
