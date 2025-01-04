@@ -322,7 +322,7 @@ def get_keyboard_for_state(state: ConversationState) -> Optional[InlineKeyboardM
 def get_message_for_state(state: ConversationState, user_id: int) -> str:
     messages = {
         ConversationState.START: "Hi! Welcome to Travel2morrow. How can I assist you today?",
-        ConversationState.DEFAULT_ANSWER: "Would you like to use the default answers?",
+        ConversationState.DEFAULT_ANSWER: "Would you like to use previous answers?",
         ConversationState.WHO_TRAVELLING: "Who's travelling?",
         ConversationState.TRIP_TYPE: "Single trip or annual?",
         ConversationState.DESTINATION: "Which country are you going to?",
@@ -531,123 +531,25 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
         logger.error(f"Error in validate_with_gpt: {e}")
         return (False, "Sorry, I couldn't validate your input. Please try again.", None)
 
-async def handle_message(update: Update, context: CallbackContext) -> None:
-    """Handle text messages."""
-    user_id = update.effective_user.id
-    user_input = update.message.text
-    current_state = user_states.get(user_id, ConversationState.START)
-    
-    # If we're at START, redirect to /start command
-    if current_state == ConversationState.START:
-        await start(update, context)
-        return
-    
-    # Handle text input validation
-    is_valid, validation_message, processed_value = await validate_with_gpt(current_state, user_input)
-    
-    if not is_valid:
-        keyboard = get_keyboard_for_state(current_state)
-        await update.message.reply_text(
-            validation_message + "\n\n" + get_message_for_state(current_state, user_id),
-            reply_markup=keyboard
-        )
-        return
-    
-    if processed_value == 'go_back':
-        next_state = await determine_next_state(current_state, 'back')
-        if current_state in user_responses.get(user_id, {}):
-            del user_responses[user_id][current_state]
-    else:
-        # Store the response if it's not a navigation command
-        if current_state not in [ConversationState.START, ConversationState.LEARN_MORE]:
-            user_responses.setdefault(user_id, {})
-            user_responses[user_id][current_state] = processed_value
-            
-            # If it's the first input and we have saved responses to show
-            if (current_state == ConversationState.WHO_TRAVELLING and 
-                'telegram_handle' in user_responses[user_id]):
-                username = update.effective_user.username
-                if username:
-                    connection = get_database_connection()
-                    if connection:
-                        saved_responses = get_user_saved_responses(connection, f"@{username}")
-                        connection.close()
-                        
-                        if saved_responses:
-                            context.user_data['saved_responses'] = saved_responses
-                            message = (
-                                f"{format_saved_responses(saved_responses)}\n\n"
-                                "Would you like to use these answers? "
-                                "You'll only need to provide destination and travel dates."
-                            )
-                            keyboard = get_keyboard_for_state(ConversationState.DEFAULT_ANSWER)
-                            user_states[user_id] = ConversationState.DEFAULT_ANSWER
-                            await update.message.reply_text(message, reply_markup=keyboard)
-                            return
-        
-        # Determine next state
-        next_state = await determine_next_state(current_state, processed_value)
-        
-        # Skip medical and activity states
-        if next_state in [
-                    ConversationState.ADVENTURE_ACTIVITIES,
-                    ConversationState.MEDICAL_CONDITIONS,
-                    ConversationState.BUDGET,
-                    ConversationState.ADDITIONAL_COVERAGE
-                ]:
-                    next_state = ConversationState.RECOMMENDATION
-    
-    # Save to database when reaching recommendation state
-    if next_state == ConversationState.RECOMMENDATION:
-        connection = get_database_connection()
-        if connection:
-            db_user_id = save_user_responses(connection, user_id, user_responses.get(user_id, {}))
-            if db_user_id:
-                context.user_data['db_user_id'] = db_user_id
-            connection.close()
-    
-    user_states[user_id] = next_state
-    
-    if validation_message and not validation_message.startswith("Valid"):
-        await update.message.reply_text(validation_message)
-    
-    message = get_message_for_state(next_state, user_id)
-    keyboard = get_keyboard_for_state(next_state)
-    
-    await update.message.reply_text(message, reply_markup=keyboard)
-
-# Here's the issue and solution for the button_handler function:
-
-async def button_handler(update: Update, context: CallbackContext) -> None:
-    """Handle button callbacks."""
-    print("ENTERING BUTTON HANDLER") # Add this debug print
-    query = update.callback_query
-    user_id = query.from_user.id
-    
-    # Add debug prints for state tracking
+async def handle_state_transition(
+    user_id: int, 
+    current_state: ConversationState,
+    next_action: str,
+    context: CallbackContext
+) -> tuple[ConversationState, str, InlineKeyboardMarkup]:
+    """
+    Handle state transitions based on button_handler logic.
+    Returns tuple of (next_state, message, keyboard)
+    """
+    print("\nSTATE TRANSITION")
     print(f"User ID: {user_id}")
-    print(f"Initial current_state: {user_states.get(user_id, ConversationState.START)}")
-    print(f"Query data: {query.data}")
+    print(f"Current state: {current_state}")
+    print(f"Action: {next_action}")
 
-    if user_id not in user_variables:
-        user_variables[user_id] = {
-            "chosen_default": False,
-            "default_data_existed": False
-        }
-    print(f"User variables: {user_variables[user_id]}")  # Debug print
-
-    current_state = user_states.get(user_id, ConversationState.START)
-    next_state = await determine_next_state(current_state, query.data)
+    # Initialize next_state
+    next_state = await determine_next_state(current_state, next_action)
     
-    print(f"Initial next_state: {next_state}")  # Debug print
-    
-    await query.answer()
-    
-    selected_option = response_labels.get(query.data, query.data)
-    user_selection_message = f"Selected: {selected_option}"
-    await query.message.reply_text(user_selection_message)
-
-    if query.data == 'go_back':
+    if next_action == 'go_back':
         print(f"GO BACK STATE: {current_state}")
         if current_state == ConversationState.DESTINATION and user_variables[user_id]['default_data_existed']:
             next_state = ConversationState.DEFAULT_ANSWER
@@ -658,12 +560,11 @@ async def button_handler(update: Update, context: CallbackContext) -> None:
         if current_state in user_responses.get(user_id, {}):
             del user_responses[user_id][current_state]
     else:
-        print(f"HANDLING NON-BACK STATE: {current_state}")  # Modified debug print
+        print(f"HANDLING NON-BACK STATE: {current_state}")
         
         # Handle 'explore' option from START state
-        if current_state == ConversationState.START and query.data == 'explore':
-            print("Processing explore option")  # Debug print
-            username = query.from_user.username
+        if current_state == ConversationState.START and next_action == 'explore':
+            username = context.user_data.get('username')
             if username:
                 telegram_handle = f"@{username}"
                 connection = get_database_connection()
@@ -674,48 +575,43 @@ async def button_handler(update: Update, context: CallbackContext) -> None:
                     if saved_responses:
                         user_variables[user_id]['default_data_existed'] = True
                         context.user_data['saved_responses'] = saved_responses
-                        next_state = ConversationState.DEFAULT_ANSWER  # Explicitly set next state
-                        print(f"Found saved responses, setting next_state to: {next_state}")  # Debug print
+                        next_state = ConversationState.DEFAULT_ANSWER
                     else:
                         next_state = ConversationState.DESTINATION
-                        print(f"No saved responses, setting next_state to: {next_state}")  # Debug print
         
         # Handle default answer choice
         elif current_state == ConversationState.DEFAULT_ANSWER:
-            print(f"Processing default answer: {query.data}")  # Debug print
-            if query.data == 'default_yes':
+            print(f"Processing default answer: {next_action}")
+            if next_action == 'default_yes':
                 saved_responses = context.user_data.get('saved_responses', {})
                 user_responses[user_id] = saved_responses.copy()
-                if 'telegram_handle' not in user_responses[user_id]:
-                    user_responses[user_id]['telegram_handle'] = f"@{query.from_user.username}"
+                user_responses[user_id]['telegram_handle'] = f"@{context.user_data.get('username')}"
                 user_variables[user_id]['chosen_default'] = True
-                next_state = ConversationState.DESTINATION  # Explicitly set next state
-            elif query.data == 'default_no':
-                user_responses[user_id] = {'telegram_handle': f"@{query.from_user.username}"}
+                next_state = ConversationState.DESTINATION
+            elif next_action == 'default_no':
+                user_responses[user_id] = {'telegram_handle': f"@{context.user_data.get('username')}"}
                 user_variables[user_id]['chosen_default'] = False
-                next_state = ConversationState.WHO_TRAVELLING  # Explicitly set next state
-            print(f"After default answer processing, next_state: {next_state}")  # Debug print
+                next_state = ConversationState.WHO_TRAVELLING
         
         # Handle travel date state when using default answers
         elif current_state == ConversationState.TRAVEL_DATE and user_variables[user_id]['chosen_default']:
-            print("Processing travel date with default answers")  # Debug print
+            print("Processing travel date with default answers")
             next_state = ConversationState.RECOMMENDATION
         
         # Handle other button callbacks
         else:
-            print(f"Processing other callback: {query.data}")  # Debug print
             if current_state not in [ConversationState.START, ConversationState.LEARN_MORE]:
                 user_responses.setdefault(user_id, {})
-                user_responses[user_id][current_state] = query.data
+                user_responses[user_id][current_state] = next_action
             
-                if query.data == 'manage':
+                if next_action == 'manage':
                     next_state = ConversationState.MANAGE_INSURANCE
-                elif query.data == 'learn':
+                elif next_action == 'learn':
                     next_state = ConversationState.LEARN_MORE
 
     # Save to database when reaching recommendation state
     if next_state == ConversationState.RECOMMENDATION:
-        print("Saving to database")  # Debug print
+        print("Saving to database")
         connection = get_database_connection()
         if connection:
             db_user_id = save_user_responses(connection, user_id, user_responses.get(user_id, {}))
@@ -724,9 +620,83 @@ async def button_handler(update: Update, context: CallbackContext) -> None:
             connection.close()
     
     user_states[user_id] = next_state
-    print(f"Final next_state: {next_state}")  # Debug print
-    message = message if 'message' in locals() else get_message_for_state(next_state, user_id)
+    print(f"Final next_state: {next_state}")
+    
+    message = get_message_for_state(next_state, user_id)
     keyboard = get_keyboard_for_state(next_state)
+    
+    return next_state, message, keyboard
+
+async def handle_message(update: Update, context: CallbackContext) -> None:
+    """Handle text messages."""
+    print("\nENTERING HANDLE_MESSAGE")
+    user_id = update.effective_user.id
+    user_input = update.message.text
+    current_state = user_states.get(user_id, ConversationState.START)
+    
+    print(f"User input: {user_input}")
+    print(f"Current state: {current_state}")
+    
+    if current_state == ConversationState.START:
+        await start(update, context)
+        return
+    
+    is_valid, validation_message, processed_value = await validate_with_gpt(current_state, user_input)
+    print(f"Validation: valid={is_valid}, value={processed_value}")
+    
+    if not is_valid:
+        keyboard = get_keyboard_for_state(current_state)
+        await update.message.reply_text(
+            validation_message + "\n\n" + get_message_for_state(current_state, user_id),
+            reply_markup=keyboard
+        )
+        return
+
+    # Store username for state transition
+    context.user_data['username'] = update.effective_user.username
+    
+    next_state, message, keyboard = await handle_state_transition(
+        user_id, 
+        current_state, 
+        processed_value, 
+        context
+    )
+    
+    if validation_message and not validation_message.startswith("Valid"):
+        await update.message.reply_text(validation_message)
+    
+    await update.message.reply_text(message, reply_markup=keyboard)
+
+async def button_handler(update: Update, context: CallbackContext) -> None:
+    """Handle button callbacks."""
+    print("\nENTERING BUTTON_HANDLER")
+    query = update.callback_query
+    user_id = query.from_user.id
+    
+    if user_id not in user_variables:
+        user_variables[user_id] = {
+            "chosen_default": False,
+            "default_data_existed": False
+        }
+    
+    current_state = user_states.get(user_id, ConversationState.START)
+    print(f"Button pressed: {query.data}")
+    print(f"Current state: {current_state}")
+    
+    await query.answer()
+    
+    selected_option = response_labels.get(query.data, query.data)
+    await query.message.reply_text(f"Selected: {selected_option}")
+
+    # Store username for state transition
+    context.user_data['username'] = query.from_user.username
+    
+    next_state, message, keyboard = await handle_state_transition(
+        user_id, 
+        current_state, 
+        query.data, 
+        context
+    )
     
     await query.message.reply_text(text=message, reply_markup=keyboard)
     
