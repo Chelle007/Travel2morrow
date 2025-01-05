@@ -29,10 +29,11 @@ logger = logging.getLogger(__name__)
 class ConversationState(Enum):
     START = auto()
     DEFAULT_ANSWER = auto()
-    WHO_TRAVELLING = auto()
-    TRIP_TYPE = auto()
     DESTINATION = auto()
     TRAVEL_DATE = auto()
+    DURATION = auto()
+    WHO_TRAVELLING = auto()
+    TRIP_TYPE = auto()
     ADVENTURE_ACTIVITIES = auto()
     ADVENTURE_DETAILS = auto()
     MEDICAL_CONDITIONS = auto()
@@ -327,6 +328,7 @@ def get_message_for_state(state: ConversationState, user_id: int) -> str:
         ConversationState.TRIP_TYPE: "Single trip or annual?",
         ConversationState.DESTINATION: "Which country are you going to?",
         ConversationState.TRAVEL_DATE: "Which date are you going?",
+        ConversationState.DURATION: "How many days are you going?",
         ConversationState.ADVENTURE_ACTIVITIES: "Do you need extra protection for adventure or risky activities/sports?",
         ConversationState.ADVENTURE_DETAILS: "Which activities are you participating in?",
         ConversationState.MEDICAL_CONDITIONS: "Do you have any pre-existing medical conditions?",
@@ -349,6 +351,7 @@ async def determine_next_state(current_state: ConversationState, user_input: str
         ConversationState.DEFAULT_ANSWER,
         ConversationState.DESTINATION,
         ConversationState.TRAVEL_DATE,
+        ConversationState.DURATION,
         ConversationState.WHO_TRAVELLING,
         ConversationState.TRIP_TYPE,
         ConversationState.ADVENTURE_ACTIVITIES,
@@ -371,27 +374,6 @@ async def determine_next_state(current_state: ConversationState, user_input: str
 
     return states[next_index]
 
-async def chat_with_ai(user_input: str, context: str = "") -> str:
-    """Interact with OpenAI API."""
-    try:
-        system_message = (
-            "You are a travel insurance expert assistant. "
-            "Keep responses concise and relevant to travel insurance. "
-            f"Current context: {context}"
-        )
-        
-        response = await client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_input},
-            ]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        logger.error(f"Error with OpenAI API: {e}")
-        return "Sorry, I encountered an error. Please try again later."
-
 async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[bool, str, any]:
     """
     Use GPT to validate and interpret user input based on the current state.
@@ -408,6 +390,15 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
                 "valid_options": ["yes", "no"],
                 "prompt": "User is choosing whether they want to use default answer (yes/no). Is their response valid? If valid, categorize as 'yes' or 'no'. If invalid, explain why."
             },
+            ConversationState.DESTINATION: {
+                "prompt": "User is entering a country name. If it's valid, confirm the country. If invalid, explain why."
+            },
+            ConversationState.TRAVEL_DATE: {
+                "prompt": "User is entering a travel date. Is it a valid date format? If valid, confirm the date. If invalid, ask for a clearer date format."
+            },
+            ConversationState.DURATION: {
+                "prompt": "User is entering a duration. Is it a valid duration format less than 365 days? If valid, transform the duration in days. If invalid, explain why."
+            },
             ConversationState.WHO_TRAVELLING: {
                 "valid_options": ["solo", "family"],
                 "prompt": "User is choosing between solo or family travel. Is their response valid? If valid, categorize as 'solo' or 'family'. If invalid, explain why."
@@ -415,12 +406,6 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
             ConversationState.TRIP_TYPE: {
                 "valid_options": ["single", "annual"],
                 "prompt": "User is choosing between single trip or annual coverage. Is their response valid? If valid, categorize as 'single' or 'annual'. If invalid, explain why."
-            },
-            ConversationState.DESTINATION: {
-                "prompt": "User is entering a country name. If it's ambiguous, ask for clarification. If it's clear, confirm the country. If invalid, explain why."
-            },
-            ConversationState.TRAVEL_DATE: {
-                "prompt": "User is entering a travel date. Is it a valid date format? If valid, confirm the date. If invalid, ask for a clearer date format."
             },
             ConversationState.ADVENTURE_ACTIVITIES: {
                 "valid_options": ["yes", "no"],
@@ -497,6 +482,50 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
             
             return (result["is_valid"], result["message"], result["processed_value"])
 
+        # Special handling for duration state
+        if state == ConversationState.DURATION:
+            duration_system_prompt = """
+                User is entering a trip duration. Convert any duration format to days.
+                Accept and convert:
+                - Direct day inputs (e.g., "5 days", "7d")
+                - Hours (e.g., "48 hours", "72h")
+                - Weeks (e.g., "2 weeks", "3w")
+                - Months (e.g., "1 month", "2m")
+                - Mixed formats (e.g., "1 week 3 days", "2 weeks and 4 days")
+                - Numbers only (assume days if just a number)
+                
+                Rules:
+                1. Maximum duration is 365 days
+                2. Convert all inputs to whole number of days
+                3. For months, use 30 days per month
+                4. Round up partial days
+                
+                Response must be in format:
+                {
+                    "is_valid": true/false,
+                    "message": "Selected: X days" or explanation if invalid,
+                    "processed_value": "X" (just the number of days as string)
+                }
+                """
+
+            response = await client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": duration_system_prompt},
+                    {"role": "user", "content": user_input}
+                ]
+            )
+            
+            import json
+            result = json.loads(response.choices[0].message.content)
+            
+            if result["is_valid"]:
+                days = int(result["processed_value"])
+                if days > 365:
+                    return (False, "Duration cannot exceed 365 days. Please enter a shorter duration.", None)
+                return (True, f"Selected: {days} days", str(days))
+            return (False, result["message"], None)
+
         # Get state context
         context = state_contexts.get(state, {"prompt": "Validate if this is a reasonable response."})
         
@@ -554,7 +583,7 @@ async def handle_state_transition(
         if current_state == ConversationState.DESTINATION and user_variables[user_id]['default_data_existed']:
             next_state = ConversationState.DEFAULT_ANSWER
         elif current_state == ConversationState.RECOMMENDATION and user_variables[user_id]['chosen_default']:
-            next_state = ConversationState.TRAVEL_DATE
+            next_state = ConversationState.DURATION
         else:
             next_state = await determine_next_state(current_state, 'back')
         if current_state in user_responses.get(user_id, {}):
@@ -587,14 +616,12 @@ async def handle_state_transition(
                 user_responses[user_id] = saved_responses.copy()
                 user_responses[user_id]['telegram_handle'] = f"@{context.user_data.get('username')}"
                 user_variables[user_id]['chosen_default'] = True
-                next_state = ConversationState.DESTINATION
             elif next_action == 'default_no':
                 user_responses[user_id] = {'telegram_handle': f"@{context.user_data.get('username')}"}
                 user_variables[user_id]['chosen_default'] = False
-                next_state = ConversationState.WHO_TRAVELLING
         
         # Handle travel date state when using default answers
-        elif current_state == ConversationState.TRAVEL_DATE and user_variables[user_id]['chosen_default']:
+        elif current_state == ConversationState.DURATION and user_variables[user_id]['chosen_default']:
             print("Processing travel date with default answers")
             next_state = ConversationState.RECOMMENDATION
         
