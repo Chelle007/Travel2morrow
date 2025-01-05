@@ -342,7 +342,35 @@ def get_message_for_state(state: ConversationState, user_id: int) -> str:
     }
     
     base_message = messages.get(state, "How can I help you?")
-    return f"{base_message}"
+    
+    # If we're at DEFAULT_ANSWER state and there are saved responses, show them
+    if state == ConversationState.DEFAULT_ANSWER:
+        saved_response_lines = []
+        saved_responses = user_variables.get(user_id, {}).get('saved_responses', {})
+        
+        if saved_responses:
+            labels_map = {
+                ConversationState.WHO_TRAVELLING: "Who's travelling",
+                ConversationState.TRIP_TYPE: "Trip type",
+                ConversationState.ADVENTURE_ACTIVITIES: "Adventure activities",
+                ConversationState.ADVENTURE_DETAILS: "Adventure details",
+                ConversationState.MEDICAL_CONDITIONS: "Medical conditions",
+                ConversationState.MEDICAL_DETAILS: "Medical details",
+                ConversationState.BUDGET: "Budget",
+                ConversationState.ADDITIONAL_COVERAGE: "Additional coverage"
+            }
+            
+            for state_key, label in labels_map.items():
+                if state_key in saved_responses:
+                    value = saved_responses[state_key]
+                    # Convert the value to a readable format using response_labels if available
+                    display_value = response_labels.get(value, value)
+                    saved_response_lines.append(f"{label}: {display_value}")
+            
+            if saved_response_lines:
+                return "\n".join(saved_response_lines) + "\n\n" + base_message
+    
+    return base_message
 
 async def determine_next_state(current_state: ConversationState, user_input: str) -> ConversationState:
     """Determine the next state based on current state and user input."""
@@ -380,11 +408,25 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
     Returns (is_valid, message, processed_value)
     """
     try:
+        # Check for "go back" intent first, but only if the input suggests backwards movement
+        go_back_indicators = ["back", "previous", "return", "go back"]
+        if any(indicator in user_input.lower() for indicator in go_back_indicators):
+            back_response = await client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "Determine if the user wants to go back to the previous question. Respond with only 'yes' or 'no'."},
+                    {"role": "user", "content": f"Does this message indicate the user wants to go back: '{user_input}'"}
+                ]
+            )
+            
+            if 'yes' in back_response.choices[0].message.content.lower():
+                return (True, "Going back to previous question...", 'go_back')
+
         # Construct context-aware prompt based on the current state
         state_contexts = {
             ConversationState.START: {
                 "valid_options": ["explore", "manage", "learn"],
-                "prompt": "User is choosing between explore travel insurance options, manage their existing travel insurance, or learn more about Travel2morrow. Is their response valid? If valid, categorize as 'solo' or 'family'. If invalid, explain why."
+                "prompt": "User is choosing between explore travel insurance options, manage their existing travel insurance, or learn more about Travel2morrow. Is their response valid? If valid, categorize as 'explore', 'manage', or 'learn'. If invalid, explain why."
             },
             ConversationState.DEFAULT_ANSWER: {
                 "valid_options": ["yes", "no"],
@@ -417,18 +459,6 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
             }
         }
 
-        # Check for "go back" intent first
-        back_response = await client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "Determine if the user wants to go back to the previous question. Respond with only 'yes' or 'no'."},
-                {"role": "user", "content": f"Does this message indicate the user wants to go back: '{user_input}'"}
-            ]
-        )
-        
-        if 'yes' in back_response.choices[0].message.content.lower():
-            return (True, "Going back to previous question...", 'go_back')
-        
         # Special handling for travel date
         if state == ConversationState.TRAVEL_DATE:
             current_date = datetime.now()
@@ -601,8 +631,9 @@ async def handle_state_transition(
                     saved_responses = get_user_saved_responses(connection, telegram_handle)
                     connection.close()
                     
-                    if saved_responses:
+                    if saved_responses and not user_variables[user_id]['chosen_default']:
                         user_variables[user_id]['default_data_existed'] = True
+                        user_variables[user_id]['saved_responses'] = saved_responses
                         context.user_data['saved_responses'] = saved_responses
                         next_state = ConversationState.DEFAULT_ANSWER
                     else:
@@ -664,10 +695,49 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     print(f"User input: {user_input}")
     print(f"Current state: {current_state}")
     
+    # Initialize user if not exists
+    if user_id not in user_variables:
+        user_variables[user_id] = {
+            "chosen_default": False,
+            "default_data_existed": False
+        }
+    
+    # Handle START state differently
     if current_state == ConversationState.START:
-        await start(update, context)
+        is_valid, validation_message, processed_value = await validate_with_gpt(current_state, user_input)
+        print(f"Start state validation: valid={is_valid}, value={processed_value}")
+        
+        if not is_valid:
+            # If invalid input, just show the start menu again without the "I'm sorry" message
+            keyboard = get_keyboard_for_state(current_state)
+            await update.message.reply_text(
+                get_message_for_state(current_state, user_id),
+                reply_markup=keyboard
+            )
+            return
+        
+        # Initialize user responses if needed
+        if user_id not in user_responses:
+            user_responses[user_id] = {}
+            username = update.effective_user.username
+            if username:
+                user_responses[user_id]['telegram_handle'] = f"@{username}"
+        
+        # Store username for state transition
+        context.user_data['username'] = update.effective_user.username
+        
+        # Handle the valid input
+        next_state, message, keyboard = await handle_state_transition(
+            user_id,
+            current_state,
+            processed_value,
+            context
+        )
+        
+        await update.message.reply_text(message, reply_markup=keyboard)
         return
     
+    # Handle other states as before
     is_valid, validation_message, processed_value = await validate_with_gpt(current_state, user_input)
     print(f"Validation: valid={is_valid}, value={processed_value}")
     
@@ -692,13 +762,29 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     if validation_message and not validation_message.startswith("Valid"):
         await update.message.reply_text(validation_message)
     
-    await update.message.reply_text(message, reply_markup=keyboard)
+    sent_message = await update.message.reply_text(message, reply_markup=keyboard)
+    if not hasattr(context, 'latest_message_ids'):
+        context.latest_message_ids = {}
+    context.latest_message_ids[user_id] = sent_message.message_id
 
 async def button_handler(update: Update, context: CallbackContext) -> None:
     """Handle button callbacks."""
     print("\nENTERING BUTTON_HANDLER")
     query = update.callback_query
     user_id = query.from_user.id
+    
+    # Store the latest message_id for each user
+    if not hasattr(context, 'latest_message_ids'):
+        context.latest_message_ids = {}
+    
+    # Check if this callback is from an old message
+    if (user_id in context.latest_message_ids and 
+        query.message.message_id < context.latest_message_ids[user_id]):
+        await query.answer("Please use the buttons from the most recent message.", show_alert=True)
+        return
+    
+    # Update the latest message ID
+    context.latest_message_ids[user_id] = query.message.message_id
     
     if user_id not in user_variables:
         user_variables[user_id] = {
@@ -726,7 +812,7 @@ async def button_handler(update: Update, context: CallbackContext) -> None:
     )
     
     await query.message.reply_text(text=message, reply_markup=keyboard)
-    
+
 async def start(update: Update, context: CallbackContext) -> None:
     """Handle the /start command."""
     user_id = update.effective_user.id
@@ -741,7 +827,11 @@ async def start(update: Update, context: CallbackContext) -> None:
     keyboard = get_keyboard_for_state(ConversationState.START)
     message = get_message_for_state(ConversationState.START, user_id)
     
-    await update.message.reply_text(message, reply_markup=keyboard)
+    # Send message and store the latest message ID
+    sent_message = await update.message.reply_text(message, reply_markup=keyboard)
+    if not hasattr(context, 'latest_message_ids'):
+        context.latest_message_ids = {}
+    context.latest_message_ids[user_id] = sent_message.message_id
 
 async def help_command(update: Update, context: CallbackContext) -> None:
     """Handle the /help command."""
