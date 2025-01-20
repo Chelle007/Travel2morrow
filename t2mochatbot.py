@@ -1,4 +1,4 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
 from openai import AsyncOpenAI
 import logging
@@ -76,6 +76,29 @@ response_labels = {
     'view_policy': 'View policy details',
     'update_policy': 'Update policy',
     'file_claim': 'File a claim'
+}
+
+response_mapping = {
+    "Explore travel insurance options": "explore",
+    "Manage my existing travel insurance": "manage",
+    "Learn more about Travel2morrow": "learn",
+    "Yes": "default_yes",
+    "No": "default_no",
+    "Solo": "solo",
+    "Family": "family",
+    "Single trip": "single",
+    "Annual": "annual",
+    "Under $50": "budget_50",
+    "$50-$100": "budget_100",
+    "Above $100": "budget_above",
+    "Trip Interruption": "coverage_interruption",
+    "Lost Luggage": "coverage_luggage",
+    "Travel Delays": "coverage_delays",
+    "No Additional Coverage": "coverage_none",
+    "View existing policy details": "view_policy",
+    "Update policy information": "update_policy",
+    "File a claim": "file_claim",
+    "◀️ Go Back": "go_back"
 }
 
 
@@ -269,56 +292,60 @@ def format_saved_responses(saved_responses: dict) -> str:
     
     return "\n".join(formatted)
 
-def get_keyboard_for_state(state: ConversationState) -> Optional[InlineKeyboardMarkup]:
+def get_keyboard_for_state(state: ConversationState) -> Optional[ReplyKeyboardMarkup]:
     keyboards = {
         ConversationState.START: [
-            [InlineKeyboardButton("Explore travel insurance options", callback_data='explore')],
-            [InlineKeyboardButton("Manage my existing travel insurance", callback_data='manage')],
-            [InlineKeyboardButton("Learn more about Travel2morrow", callback_data='learn')]
+            ["Explore travel insurance options"],
+            ["Manage my existing travel insurance"],
+            ["Learn more about Travel2morrow"]
         ],
         ConversationState.DEFAULT_ANSWER: [
-            [InlineKeyboardButton("Yes", callback_data='default_yes')],
-            [InlineKeyboardButton("No", callback_data='default_no')]
+            ["Yes"],
+            ["No"]
         ],
         ConversationState.WHO_TRAVELLING: [
-            [InlineKeyboardButton("Solo", callback_data='solo')],
-            [InlineKeyboardButton("Family", callback_data='family')]
+            ["Solo"],
+            ["Family"]
         ],
         ConversationState.TRIP_TYPE: [
-            [InlineKeyboardButton("Single trip", callback_data='single')],
-            [InlineKeyboardButton("Annual", callback_data='annual')]
+            ["Single trip"],
+            ["Annual"]
         ],
         ConversationState.ADVENTURE_ACTIVITIES: [
-            [InlineKeyboardButton("Yes", callback_data='adventure_yes')],
-            [InlineKeyboardButton("No", callback_data='adventure_no')]
+            ["Yes"],
+            ["No"]
         ],
         ConversationState.MEDICAL_CONDITIONS: [
-            [InlineKeyboardButton("Yes", callback_data='medical_yes')],
-            [InlineKeyboardButton("No", callback_data='medical_no')]
+            ["Yes"],
+            ["No"]
         ],
         ConversationState.BUDGET: [
-            [InlineKeyboardButton("Under $50", callback_data='budget_50')],
-            [InlineKeyboardButton("$50-$100", callback_data='budget_100')],
-            [InlineKeyboardButton("Above $100", callback_data='budget_above')]
+            ["Under $50"],
+            ["$50-$100"],
+            ["Above $100"]
         ],
         ConversationState.ADDITIONAL_COVERAGE: [
-            [InlineKeyboardButton("Trip Interruption", callback_data='coverage_interruption')],
-            [InlineKeyboardButton("Lost Luggage", callback_data='coverage_luggage')],
-            [InlineKeyboardButton("Travel Delays", callback_data='coverage_delays')],
-            [InlineKeyboardButton("No Additional Coverage", callback_data='coverage_none')]
+            ["Trip Interruption"],
+            ["Lost Luggage"],
+            ["Travel Delays"],
+            ["No Additional Coverage"]
         ],
         ConversationState.MANAGE_INSURANCE: [
-            [InlineKeyboardButton("View existing policy details", callback_data='view_policy')],
-            [InlineKeyboardButton("Update policy information", callback_data='update_policy')],
-            [InlineKeyboardButton("File a claim", callback_data='file_claim')]
+            ["View existing policy details"],
+            ["Update policy information"],
+            ["File a claim"]
         ]
     }
     
     keyboard = keyboards.get(state)
     if keyboard and state != ConversationState.START:
-        keyboard.append([InlineKeyboardButton("◀️ Go Back", callback_data='go_back')])
+        keyboard.append(["◀️ Go Back"])
     
-    return InlineKeyboardMarkup(keyboard) if keyboard else None
+    return ReplyKeyboardMarkup(
+        keyboard if keyboard else [[]], 
+        resize_keyboard=True,
+        one_time_keyboard=True  # Keyboard will hide after selection
+    )
 
 def get_message_for_state(state: ConversationState, user_id: int) -> str:
     messages = {
@@ -595,7 +622,7 @@ async def handle_state_transition(
     current_state: ConversationState,
     next_action: str,
     context: CallbackContext
-) -> tuple[ConversationState, str, InlineKeyboardMarkup]:
+) -> tuple[ConversationState, str, ReplyKeyboardMarkup]:
     """
     Handle state transitions based on button_handler logic.
     Returns tuple of (next_state, message, keyboard)
@@ -702,42 +729,32 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
             "default_data_existed": False
         }
     
-    # Handle START state differently
-    if current_state == ConversationState.START:
-        is_valid, validation_message, processed_value = await validate_with_gpt(current_state, user_input)
-        print(f"Start state validation: valid={is_valid}, value={processed_value}")
-        
-        if not is_valid:
-            # If invalid input, just show the start menu again without the "I'm sorry" message
-            keyboard = get_keyboard_for_state(current_state)
-            await update.message.reply_text(
-                get_message_for_state(current_state, user_id),
-                reply_markup=keyboard
-            )
-            return
-        
-        # Initialize user responses if needed
+    # Map the keyboard button text to the callback data
+    callback_data = response_mapping.get(user_input)
+    if callback_data:
+        # Process the mapped input like a button callback
         if user_id not in user_responses:
             user_responses[user_id] = {}
             username = update.effective_user.username
             if username:
                 user_responses[user_id]['telegram_handle'] = f"@{username}"
         
-        # Store username for state transition
         context.user_data['username'] = update.effective_user.username
         
-        # Handle the valid input
         next_state, message, keyboard = await handle_state_transition(
             user_id,
             current_state,
-            processed_value,
+            callback_data,
             context
         )
         
-        await update.message.reply_text(message, reply_markup=keyboard)
+        await update.message.reply_text(
+            text=message, 
+            reply_markup=keyboard or ReplyKeyboardRemove()  # Remove keyboard if None
+        )
         return
     
-    # Handle other states as before
+    # Handle free text input states (like DESTINATION, TRAVEL_DATE, etc.)
     is_valid, validation_message, processed_value = await validate_with_gpt(current_state, user_input)
     print(f"Validation: valid={is_valid}, value={processed_value}")
     
@@ -749,7 +766,6 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
         )
         return
 
-    # Store username for state transition
     context.user_data['username'] = update.effective_user.username
     
     next_state, message, keyboard = await handle_state_transition(
@@ -762,10 +778,10 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     if validation_message and not validation_message.startswith("Valid"):
         await update.message.reply_text(validation_message)
     
-    sent_message = await update.message.reply_text(message, reply_markup=keyboard)
-    if not hasattr(context, 'latest_message_ids'):
-        context.latest_message_ids = {}
-    context.latest_message_ids[user_id] = sent_message.message_id
+    await update.message.reply_text(
+        text=message, 
+        reply_markup=keyboard or ReplyKeyboardRemove()
+    )
 
 async def button_handler(update: Update, context: CallbackContext) -> None:
     """Handle button callbacks."""
@@ -819,7 +835,6 @@ async def start(update: Update, context: CallbackContext) -> None:
     user_states[user_id] = ConversationState.START
     user_responses[user_id] = {}
     
-    # Store telegram handle automatically at start
     username = update.effective_user.username
     if username:
         user_responses[user_id]['telegram_handle'] = f"@{username}"
@@ -827,11 +842,10 @@ async def start(update: Update, context: CallbackContext) -> None:
     keyboard = get_keyboard_for_state(ConversationState.START)
     message = get_message_for_state(ConversationState.START, user_id)
     
-    # Send message and store the latest message ID
-    sent_message = await update.message.reply_text(message, reply_markup=keyboard)
-    if not hasattr(context, 'latest_message_ids'):
-        context.latest_message_ids = {}
-    context.latest_message_ids[user_id] = sent_message.message_id
+    await update.message.reply_text(
+        text=message, 
+        reply_markup=keyboard
+    )
 
 async def help_command(update: Update, context: CallbackContext) -> None:
     """Handle the /help command."""
