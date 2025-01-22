@@ -50,8 +50,7 @@ user_states: Dict[int, ConversationState] = {}
 user_responses: Dict[int, Dict] = {}
 user_variables: Dict[int, Dict] = {}
 
-# Human-readable labels for responses
-response_labels = {
+RESPONSE_MAPPING = {
     'explore': 'Explore travel insurance options',
     'manage': 'Manage existing insurance',
     'learn': 'Learn more about Travel2morrow',
@@ -72,35 +71,13 @@ response_labels = {
     'coverage_luggage': 'Lost Luggage',
     'coverage_delays': 'Travel Delays',
     'coverage_none': 'No Additional Coverage',
-    'go_back': 'Go Back',
+    'go_back': '◀️ Go Back',
     'view_policy': 'View policy details',
     'update_policy': 'Update policy',
     'file_claim': 'File a claim'
 }
 
-response_mapping = {
-    "Explore travel insurance options": "explore",
-    "Manage my existing travel insurance": "manage",
-    "Learn more about Travel2morrow": "learn",
-    "Yes": "default_yes",
-    "No": "default_no",
-    "Solo": "solo",
-    "Family": "family",
-    "Single trip": "single",
-    "Annual": "annual",
-    "Under $50": "budget_50",
-    "$50-$100": "budget_100",
-    "Above $100": "budget_above",
-    "Trip Interruption": "coverage_interruption",
-    "Lost Luggage": "coverage_luggage",
-    "Travel Delays": "coverage_delays",
-    "No Additional Coverage": "coverage_none",
-    "View existing policy details": "view_policy",
-    "Update policy information": "update_policy",
-    "File a claim": "file_claim",
-    "◀️ Go Back": "go_back"
-}
-
+REVERSE_MAPPING = {display: key for key, display in RESPONSE_MAPPING.items()}
 
 # FUNCTIONS
 def get_database_connection():
@@ -287,7 +264,7 @@ def format_saved_responses(saved_responses: dict) -> str:
     for state, value in saved_responses.items():
         if state in state_labels and value:
             label = state_labels[state]
-            display_value = response_labels.get(value, value)
+            display_value = RESPONSE_MAPPING.get(value, value)
             formatted.append(f"{label}: {display_value}")
     
     return "\n".join(formatted)
@@ -390,8 +367,8 @@ def get_message_for_state(state: ConversationState, user_id: int) -> str:
             for state_key, label in labels_map.items():
                 if state_key in saved_responses:
                     value = saved_responses[state_key]
-                    # Convert the value to a readable format using response_labels if available
-                    display_value = response_labels.get(value, value)
+                    # Convert the value to a readable format using RESPONSE_MAPPING if available
+                    display_value = RESPONSE_MAPPING.get(value, value)
                     saved_response_lines.append(f"{label}: {display_value}")
             
             if saved_response_lines:
@@ -730,7 +707,7 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
         }
     
     # Map the keyboard button text to the callback data
-    callback_data = response_mapping.get(user_input)
+    callback_data = REVERSE_MAPPING.get(user_input)
     if callback_data:
         # Process the mapped input like a button callback
         if user_id not in user_responses:
@@ -814,7 +791,7 @@ async def button_handler(update: Update, context: CallbackContext) -> None:
     
     await query.answer()
     
-    selected_option = response_labels.get(query.data, query.data)
+    selected_option = RESPONSE_MAPPING.get(query.data, query.data)
     await query.message.reply_text(f"Selected: {selected_option}")
 
     # Store username for state transition
