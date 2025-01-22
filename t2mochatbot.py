@@ -806,20 +806,6 @@ async def button_handler(update: Update, context: CallbackContext) -> None:
     
     await query.message.reply_text(text=message, reply_markup=keyboard)
 
-async def setup_menu_button(application: Application) -> None:
-    """Set up the menu button for the bot."""
-    try:
-        # Get the bot instance
-        bot = application.bot
-        
-        # Set the menu button to show commands
-        await bot.set_chat_menu_button(
-            menu_button=MenuButtonCommands()
-        )
-        logger.info("Menu button setup successful")
-    except Exception as e:
-        logger.error(f"Error setting up menu button: {e}")
-
 async def start(update: Update, context: CallbackContext) -> None:
     """Handle the /start command."""
     user_id = update.effective_user.id
@@ -860,7 +846,6 @@ def main():
     
     try:
         logger.info("Starting the bot...")
-        application.job_queue.run_once(setup_menu_button, 0)
         application.run_polling(allowed_updates=Update.ALL_TYPES)
     except Exception as e:
         logger.error(f"Error starting the bot: {e}")
