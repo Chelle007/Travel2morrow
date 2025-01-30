@@ -1,0 +1,20 @@
+from enum import Enum, auto
+
+class ConversationState(Enum):
+    START = auto()
+    DEFAULT_ANSWER = auto()
+    DESTINATION = auto()
+    TRAVEL_DATE = auto()
+    DURATION = auto()
+    WHO_TRAVELLING = auto()
+    TRIP_TYPE = auto()
+    ADVENTURE_ACTIVITIES = auto()
+    ADVENTURE_DETAILS = auto()
+    MEDICAL_CONDITIONS = auto()
+    MEDICAL_DETAILS = auto()
+    BUDGET = auto()
+    RECOMMENDATION = auto()
+    ADDITIONAL_COVERAGE = auto()
+    QUESTIONS = auto()
+    MANAGE_INSURANCE = auto()
+    LEARN_MORE = auto()

@@ -1,0 +1,58 @@
+from telegram import ReplyKeyboardMarkup
+from typing import Optional
+from conversation_states import ConversationState
+
+def get_keyboard_for_state(state: ConversationState) -> Optional[ReplyKeyboardMarkup]:
+    keyboards = {
+        ConversationState.START: [
+            ["Explore travel insurance options"],
+            ["Manage my existing travel insurance"],
+            ["Learn more about Travel2morrow"]
+        ],
+        ConversationState.DEFAULT_ANSWER: [
+            ["Yes"],
+            ["No"]
+        ],
+        ConversationState.WHO_TRAVELLING: [
+            ["Solo"],
+            ["Family"]
+        ],
+        ConversationState.TRIP_TYPE: [
+            ["Single trip"],
+            ["Annual"]
+        ],
+        ConversationState.ADVENTURE_ACTIVITIES: [
+            ["Yes"],
+            ["No"]
+        ],
+        ConversationState.MEDICAL_CONDITIONS: [
+            ["Yes"],
+            ["No"]
+        ],
+        ConversationState.BUDGET: [
+            ["Under $50"],
+            ["$50-$100"],
+            ["Above $100"]
+        ],
+        ConversationState.ADDITIONAL_COVERAGE: [
+            ["Trip Interruption"],
+            ["Lost Luggage"],
+            ["Travel Delays"],
+            ["No Additional Coverage"]
+        ],
+        ConversationState.MANAGE_INSURANCE: [
+            ["View existing policy details"],
+            ["Update policy information"],
+            ["File a claim"]
+        ]
+    }
+    
+    keyboard = keyboards.get(state)
+    if keyboard and state != ConversationState.START:
+        keyboard.append(["◀️ Go Back"])
+    
+    return ReplyKeyboardMarkup(
+        keyboard if keyboard else [[]], 
+        resize_keyboard=True,
+        one_time_keyboard=True  # Keyboard will hide after selection
+    )
