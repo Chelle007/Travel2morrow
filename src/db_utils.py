@@ -1,7 +1,7 @@
 import os
 import psycopg2
+from psycopg2.extras import RealDictCursor
 import uuid
-import logging
 from typing import Optional
 from conversation_states import ConversationState
 from config import logger
@@ -20,6 +20,22 @@ def get_database_connection():
     except Exception as e:
         print(f"Error connecting to the database: {e}")
         return None
+
+def fetch_insurance_plans():
+    """Fetch all insurance plans from the database."""
+    connection = get_database_connection()
+    cursor = connection.cursor(cursor_factory=RealDictCursor)
+    
+    try:
+        cursor.execute("SELECT * FROM insurance_details")
+        plans = cursor.fetchall()
+        return plans
+    except Exception as e:
+        print(f"Error fetching insurance plans: {e}")
+        return []
+    finally:
+        cursor.close()
+        connection.close()
 
 def save_user_responses(connection, user_id: int, responses: dict) -> Optional[str]:
     """Save or update user responses in the database."""
@@ -40,8 +56,7 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
         medical_conditions = responses.get(ConversationState.MEDICAL_CONDITIONS) == 'medical_yes'
         medical_details = responses.get(ConversationState.MEDICAL_DETAILS)
         budget = responses.get(ConversationState.BUDGET)
-        additional_coverage = responses.get(ConversationState.ADDITIONAL_COVERAGE)
-
+        
         # Map budget values to database format
         budget_mapping = {
             'budget_50': 'Under $50',
@@ -49,15 +64,6 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
             'budget_above': 'Above $100'
         }
         budget_value = budget_mapping.get(budget) if budget else None
-
-        # Map additional coverage values to readable format
-        coverage_mapping = {
-            'coverage_interruption': 'Trip Interruption',
-            'coverage_luggage': 'Lost Luggage',
-            'coverage_delays': 'Travel Delays',
-            'coverage_none': 'No Additional Coverage'
-        }
-        coverage_value = coverage_mapping.get(additional_coverage) if additional_coverage else None
 
         # Check if the telegram_handle already exists
         check_query = "SELECT user_id FROM users WHERE telegram_handle = %s"
@@ -74,8 +80,7 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
                 adventure_details = %s,
                 medical_conditions = %s,
                 medical_details = %s,
-                budget = %s,
-                additional_coverage = %s
+                budget = %s
             WHERE telegram_handle = %s
             """
             cursor.execute(update_query, (
@@ -86,7 +91,6 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
                 medical_conditions,
                 medical_details,
                 budget_value,
-                coverage_value,
                 telegram_handle
             ))
             db_user_id = existing_user[0]
@@ -98,8 +102,8 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
             INSERT INTO users (
                 user_id, telegram_handle, who_travelling, trip_type, 
                 adventure_activities, adventure_details, medical_conditions, 
-                medical_details, budget, additional_coverage
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                medical_details, budget
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             cursor.execute(insert_query, (
                 db_user_id,
@@ -110,8 +114,7 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
                 adventure_details,
                 medical_conditions,
                 medical_details,
-                budget_value,
-                coverage_value
+                budget_value
             ))
             logger.info(f"Added to database: {db_user_id}")
 
@@ -132,7 +135,7 @@ def get_user_saved_responses(connection, telegram_handle: str) -> Optional[dict]
         query = """
         SELECT who_travelling, trip_type, adventure_activities, 
                adventure_details, medical_conditions, medical_details,
-               budget, additional_coverage
+               budget
         FROM users 
         WHERE telegram_handle = %s
         """
@@ -162,8 +165,7 @@ def get_user_saved_responses(connection, telegram_handle: str) -> Optional[dict]
                 ConversationState.ADVENTURE_DETAILS: result[3],
                 ConversationState.MEDICAL_CONDITIONS: 'medical_yes' if result[4] else 'medical_no',
                 ConversationState.MEDICAL_DETAILS: result[5],
-                ConversationState.BUDGET: budget_mapping.get(result[6]),
-                ConversationState.ADDITIONAL_COVERAGE: coverage_mapping.get(result[7])
+                ConversationState.BUDGET: budget_mapping.get(result[6])
             }
         return None
     except Exception as e:

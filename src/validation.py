@@ -1,5 +1,6 @@
 from openai import AsyncOpenAI
 from datetime import datetime, timedelta
+import json
 from conversation_states import ConversationState
 from config import OPENAI_API_KEY, logger
 
@@ -100,7 +101,6 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
                 ]
             )
             
-            import json
             result = json.loads(response.choices[0].message.content)
             
             # If valid but needs year confirmation, ask user
@@ -149,7 +149,6 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
                 ]
             )
             
-            import json
             result = json.loads(response.choices[0].message.content)
             
             if result["is_valid"]:

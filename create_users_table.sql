@@ -15,7 +15,6 @@ CREATE TABLE users (
     medical_conditions BOOLEAN NOT NULL,          -- Indicates if the user has any medical conditions
     medical_details TEXT,                         -- Details about medical conditions
     budget VARCHAR(20),                           -- User's budget range
-    additional_coverage TEXT,                    -- Additional coverage details
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Timestamp when the record is created
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP  -- Timestamp for last update (can be used for auditing)
 );

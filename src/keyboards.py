@@ -34,12 +34,6 @@ def get_keyboard_for_state(state: ConversationState) -> Optional[ReplyKeyboardMa
             ["$50-$100"],
             ["Above $100"]
         ],
-        ConversationState.ADDITIONAL_COVERAGE: [
-            ["Trip Interruption"],
-            ["Lost Luggage"],
-            ["Travel Delays"],
-            ["No Additional Coverage"]
-        ],
         ConversationState.MANAGE_INSURANCE: [
             ["View existing policy details"],
             ["Update policy information"],

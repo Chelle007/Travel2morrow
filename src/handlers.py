@@ -5,8 +5,9 @@ from constants import RESPONSE_MAPPING, REVERSE_MAPPING
 from keyboards import get_keyboard_for_state
 from messages import get_message_for_state
 from validation import validate_with_gpt
-from db_utils import get_database_connection, save_user_responses, get_user_saved_responses
+from db_utils import get_database_connection, save_user_responses, get_user_saved_responses, fetch_insurance_plans
 from user_data import user_responses, user_states, user_variables
+from recommendation import recommend_insurance_plans
 
 async def start_command(update: Update, context: CallbackContext) -> None:
     """Handle the /start command."""
@@ -47,7 +48,6 @@ async def determine_next_state(current_state: ConversationState, user_input: str
         ConversationState.ADVENTURE_ACTIVITIES,
         ConversationState.MEDICAL_CONDITIONS,
         ConversationState.BUDGET,
-        ConversationState.ADDITIONAL_COVERAGE,
         ConversationState.RECOMMENDATION,
         ConversationState.QUESTIONS,
     ]
@@ -81,6 +81,7 @@ async def handle_state_transition(
 
     # Initialize next_state
     next_state = await determine_next_state(current_state, next_action)
+    message = None
     
     if next_action == 'go_back':
         print(f"GO BACK STATE: {current_state}")
@@ -116,12 +117,12 @@ async def handle_state_transition(
         # Handle default answer choice
         elif current_state == ConversationState.DEFAULT_ANSWER:
             print(f"Processing default answer: {next_action}")
-            if next_action == 'default_yes':
+            if next_action == 'yes' or next_action == 'default_yes':
                 saved_responses = context.user_data.get('saved_responses', {})
                 user_responses[user_id] = saved_responses.copy()
                 user_responses[user_id]['telegram_handle'] = f"@{context.user_data.get('username')}"
                 user_variables[user_id]['chosen_default'] = True
-            elif next_action == 'default_no':
+            elif next_action == 'no' or next_action == 'default_no':
                 user_responses[user_id] = {'telegram_handle': f"@{context.user_data.get('username')}"}
                 user_variables[user_id]['chosen_default'] = False
         
@@ -150,11 +151,33 @@ async def handle_state_transition(
             if db_user_id:
                 context.user_data['db_user_id'] = db_user_id
             connection.close()
-    
+        
+        print("Generating recommendations...")
+        insurance_plans = fetch_insurance_plans()
+        recommendations = recommend_insurance_plans(user_responses.get(user_id, {}), insurance_plans)
+        
+        if recommendations:
+            recommendation_message = get_message_for_state(ConversationState.RECOMMENDATION, user_id) + '\n\n'
+            for plan in recommendations:
+                recommendation_message += (
+                    f"{plan['name']} - ${plan['price']:.2f}\n"
+                    f"Medical Coverage: ${plan['medical_coverage']:.2f}\n"
+                    f"Trip Cancellation Coverage: ${plan['trip_cancellation_coverage']:.2f}\n"
+                    f"Baggage Loss Coverage: ${plan['baggage_loss_coverage']:.2f}\n"
+                    f"Baggage Delay Coverage: ${plan['baggage_delay_coverage']:.2f}\n"
+                )
+                if plan["emergency_evacuation"]:
+                    recommendation_message += "Emergency Evacuation: Yes\n"
+                recommendation_message += f"Buy Link: {plan['express_buy_link']}\n\n"
+        else:
+            recommendation_message = "No matching insurance plans found. Please adjust your preferences."
+        
+        message = recommendation_message
+
     user_states[user_id] = next_state
     print(f"Final next_state: {next_state}")
     
-    message = get_message_for_state(next_state, user_id)
+    message = message if message else get_message_for_state(next_state, user_id)
     keyboard = get_keyboard_for_state(next_state)
     
     return next_state, message, keyboard

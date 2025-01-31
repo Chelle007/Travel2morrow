@@ -14,7 +14,6 @@ class ConversationState(Enum):
     MEDICAL_DETAILS = auto()
     BUDGET = auto()
     RECOMMENDATION = auto()
-    ADDITIONAL_COVERAGE = auto()
     QUESTIONS = auto()
     MANAGE_INSURANCE = auto()
     LEARN_MORE = auto()

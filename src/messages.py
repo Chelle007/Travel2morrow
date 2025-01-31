@@ -17,7 +17,6 @@ def get_message_for_state(state: ConversationState, user_id: int) -> str:
         ConversationState.MEDICAL_DETAILS: "Please specify if you'd like additional support for your condition:",
         ConversationState.BUDGET: "Do you have a budget in mind?",
         ConversationState.RECOMMENDATION: "Based on your preferences, here's our recommendation:",
-        ConversationState.ADDITIONAL_COVERAGE: "Would you like to customize your plan with additional coverage for trip interruption, lost luggage, or delays?",
         ConversationState.QUESTIONS: "Do you have any questions about your recommended plan?",
         ConversationState.MANAGE_INSURANCE: "Please select an option:",
         ConversationState.LEARN_MORE: "Working on it..."
@@ -39,7 +38,6 @@ def get_message_for_state(state: ConversationState, user_id: int) -> str:
                 ConversationState.MEDICAL_CONDITIONS: "Medical conditions",
                 ConversationState.MEDICAL_DETAILS: "Medical details",
                 ConversationState.BUDGET: "Budget",
-                ConversationState.ADDITIONAL_COVERAGE: "Additional coverage"
             }
             
             for state_key, label in labels_map.items():
