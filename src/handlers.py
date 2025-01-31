@@ -231,7 +231,7 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     if not is_valid:
         keyboard = get_keyboard_for_state(current_state)
         await update.message.reply_text(
-            validation_message + "\n\n" + get_message_for_state(current_state, user_id),
+            ("" if current_state == ConversationState.START else (validation_message + "\n\n")) + get_message_for_state(current_state, user_id),
             reply_markup=keyboard
         )
         return
