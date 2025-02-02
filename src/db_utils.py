@@ -175,7 +175,7 @@ def get_user_saved_responses(connection, telegram_handle: str) -> Optional[dict]
                 ConversationState.ADVENTURE_DETAILS: result[3],
                 ConversationState.MEDICAL_CONDITIONS: 'medical_yes' if result[4] else 'medical_no',
                 ConversationState.MEDICAL_DETAILS: result[5],
-                ConversationState.BUDGET: budget_mapping.get(result[6])
+                ConversationState.BUDGET: budget_mapping.get(result[6]) if (result[6] in ['Under $50', '$50 - $100', 'Above $100']) else result[6]
             }
         return None
     except Exception as e:
