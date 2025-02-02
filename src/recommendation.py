@@ -1,3 +1,5 @@
+from conversation_states import ConversationState
+
 def recommend_insurance_plans(user_responses, insurance_plans):
     """
     Generate insurance recommendations based on user responses and available plans.
@@ -9,11 +11,11 @@ def recommend_insurance_plans(user_responses, insurance_plans):
     recommendations = []
 
     # Extract user preferences
-    budget = user_responses.get("budget")
+    budget = user_responses.get(ConversationState.BUDGET)
     print(budget)
-    trip_type = user_responses.get("trip_type")
-    medical_conditions = user_responses.get("medical_conditions")
-    adventure_activities = user_responses.get("adventure_activities")
+    trip_type = user_responses.get(ConversationState.TRIP_TYPE)
+    medical_conditions = user_responses.get(ConversationState.MEDICAL_CONDITIONS)
+    adventure_activities = user_responses.get(ConversationState.ADVENTURE_ACTIVITIES)
 
     # Filter plans based on user preferences
     for plan in insurance_plans:
