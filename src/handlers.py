@@ -156,6 +156,7 @@ async def handle_state_transition(
         insurance_plans = fetch_insurance_plans()
         print(user_responses.get(user_id, {}))
         recommendations = recommend_insurance_plans(user_responses.get(user_id, {}), insurance_plans)
+        print(recommendations)
         
         if recommendations:
             recommendation_message = get_message_for_state(ConversationState.RECOMMENDATION, user_id) + '\n\n'
