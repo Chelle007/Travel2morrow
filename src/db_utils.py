@@ -22,7 +22,7 @@ def get_database_connection():
                 user=os.getenv("DB_USER"),
                 password=os.getenv("DB_PASSWORD")
             )
-            
+
         print("Database connection successful!")
         return connection
     except Exception as e:
@@ -68,7 +68,7 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
         # Map budget values to database format
         budget_mapping = {
             'budget_50': 'Under $50',
-            'budget_100': '$50-$100',
+            'budget_100': '$50 - $100',
             'budget_above': 'Above $100'
         }
         budget_value = budget_mapping.get(budget) if budget else None
@@ -155,7 +155,7 @@ def get_user_saved_responses(connection, telegram_handle: str) -> Optional[dict]
             # Map database values back to callback_data format
             budget_mapping = {
                 'Under $50': 'budget_50',
-                '$50-$100': 'budget_100',
+                '$50 - $100': 'budget_100',
                 'Above $100': 'budget_above'
             }
             

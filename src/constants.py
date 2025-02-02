@@ -13,7 +13,7 @@ RESPONSE_MAPPING = {
     'medical_yes': 'Yes, I have pre-existing medical conditions',
     'medical_no': "No, I don't have pre-existing medical conditions",
     'budget_50': 'Under $50',
-    'budget_100': '$50-$100',
+    'budget_100': '$50 - $100',
     'budget_above': 'Above $100',
     'coverage_interruption': 'Trip Interruption',
     'coverage_luggage': 'Lost Luggage',

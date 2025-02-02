@@ -14,28 +14,77 @@ def recommend_insurance_plans(user_responses, insurance_plans):
     medical_conditions = user_responses.get("medical_conditions")
     adventure_activities = user_responses.get("adventure_activities")
 
+    # Filter plans based on user preferences
     for plan in insurance_plans:
-        # Filter plans based on budget
-        if budget and plan["price"] > budget:
-            continue
-
         # Filter plans based on trip type
-        if trip_type and plan["plan_type"] != trip_type:
-            continue
+        # if trip_type and plan["plan_type"] != trip_type:
+        #     continue
 
         # Filter plans based on medical coverage (if user has medical conditions)
         if medical_conditions == "Yes" and plan["medical_coverage"] == 0:
             continue
 
         # Filter plans based on adventure activities coverage
-        if adventure_activities == "Yes" and not plan["emergency_evacuation"]:
-            continue
+        # if adventure_activities == "Yes" and not plan["emergency_evacuation"]:
+        #     continue
 
         # If the plan passes all filters, add it to recommendations
         recommendations.append(plan)
 
-    # Sort recommendations by price (ascending)
-    recommendations.sort(key=lambda x: x["price"])
+    # Parse custom budget range if provided
+    if isinstance(budget, str) and ("to" in budget.lower() or "-" in budget):
+        try:
+            # Extract the lower and upper bounds from the user's input
+            lower_bound, upper_bound = map(float, budget.lower().replace("around", "").replace("to", "").replace("-", "").replace("$", "").split())
+        except ValueError:
+            # If parsing fails, fall back to default budget ranges
+            lower_bound, upper_bound = None, None
+    elif isinstance(budget, str) and ("under" in budget.lower()):
+        try:
+            lower_bound = map(float, budget.lower().replace("under", "").replace(" ", "").replace("$", ""))
+            upper_bound = None
+        except ValueError:
+            lower_bound, upper_bound = None, None
+    elif isinstance(budget, str) and ("above" in budget.lower()):
+        try: 
+            upper_bound = map(float, budget.lower().replace("above", "").replace(" ", "").replace("$", ""))
+            lower_bound = None
+        except ValueError:
+            lower_bound, upper_bound = None, None
+    else:
+        lower_bound, upper_bound = None, None
+
+    # Filter plans based on budget
+    if lower_bound is not None and upper_bound is not None:
+        priority_plans = [plan for plan in recommendations if lower_bound <= plan["price"] <= upper_bound]
+        if not priority_plans:
+            recommendations = [plan for plan in recommendations if plan["price"] < lower_bound]
+        else:
+            recommendations = priority_plans
+    elif lower_bound is not None:
+        recommendations = [plan for plan in recommendations if plan["price"] < lower_bound]
+    elif upper_bound is not None:
+        priority_plans = [plan for plan in recommendations if plan["price"] >= upper_bound]
+        if not priority_plans:
+            recommendations = [plan for plan in recommendations if plan["price"] < upper_bound]
+        else:
+            recommendations = priority_plans
+
+    # If no plans match the budget, return an empty list
+    if not recommendations:
+        return []
+
+    # Calculate total coverage for each plan
+    for plan in recommendations:
+        plan["total_coverage"] = (
+            plan["medical_coverage"] +
+            plan["trip_cancellation_coverage"] +
+            plan["baggage_loss_coverage"] +
+            plan["baggage_delay_coverage"]
+        )
+
+    # Sort recommendations by total coverage (descending) and price (ascending)
+    recommendations.sort(key=lambda x: (-x["total_coverage"], x["price"]))
 
     # Return only the top 3 plans
     return recommendations[:3]

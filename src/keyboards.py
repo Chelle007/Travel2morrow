@@ -31,7 +31,7 @@ def get_keyboard_for_state(state: ConversationState) -> Optional[ReplyKeyboardMa
         ],
         ConversationState.BUDGET: [
             ["Under $50"],
-            ["$50-$100"],
+            ["$50 - $100"],
             ["Above $100"]
         ],
         ConversationState.MANAGE_INSURANCE: [
