@@ -65,13 +65,15 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
         medical_details = responses.get(ConversationState.MEDICAL_DETAILS)
         budget = responses.get(ConversationState.BUDGET)
         
+        print("BUDGET: " + budget)
         # Map budget values to database format
         budget_mapping = {
             'budget_50': 'Under $50',
             'budget_100': '$50 - $100',
             'budget_above': 'Above $100'
         }
-        budget_value = budget_mapping.get(budget in ['budget_50', 'budget_100', 'budget_above']) if budget else None
+        budget_value = budget_mapping.get(budget) if budget in ['budget_50', 'budget_100', 'budget_above'] else budget
+        print("BUDGET VALUE")
 
         # Check if the telegram_handle already exists
         check_query = "SELECT user_id FROM users WHERE telegram_handle = %s"
