@@ -154,6 +154,7 @@ async def handle_state_transition(
         
         print("Generating recommendations...")
         insurance_plans = fetch_insurance_plans()
+        print(user_responses.get(user_id, {}))
         recommendations = recommend_insurance_plans(user_responses.get(user_id, {}), insurance_plans)
         
         if recommendations:
