@@ -54,7 +54,7 @@ def recommend_insurance_plans(user_responses, insurance_plans):
     else:
         lower_bound, upper_bound = None, None
 
-    print("LOWER BOUND: " + lower_bound)
+    print("LOWER BOUND: " + str(lower_bound))
     # Filter plans based on budget
     if lower_bound is not None and upper_bound is not None:
         priority_plans = [plan for plan in recommendations if lower_bound <= plan["price"] <= upper_bound]
