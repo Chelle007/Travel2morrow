@@ -65,6 +65,7 @@ def save_user_responses(connection, user_id: int, responses: dict) -> Optional[s
         medical_details = responses.get(ConversationState.MEDICAL_DETAILS)
         budget = responses.get(ConversationState.BUDGET)
         
+        print("BUDGET: " + budget)
         # Map budget values to database format
         budget_mapping = {
             'budget_50': 'Under $50',

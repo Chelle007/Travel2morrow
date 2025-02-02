@@ -62,7 +62,7 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
                 "prompt": "User is indicating if they have medical conditions (yes/no). Is their response valid? If valid, categorize as 'yes' or 'no'. If invalid, explain why."
             },
             ConversationState.BUDGET: {
-                "prompt": "User is entering a budget. Extract the budget range from the user's input. Is their response valid? If valid, answer with this format: 'under $x' or '$x to $y' or 'above $y'. If invalid, explain why."
+                "prompt": "User is entering a budget. Extract the budget range from the user's input. Is their response valid? If valid, answer with this format: 'Under $x' or '$x - $y' or 'Above $y'. If invalid, explain why."
             },
         }
 
