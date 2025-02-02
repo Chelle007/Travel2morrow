@@ -34,20 +34,18 @@ def recommend_insurance_plans(user_responses, insurance_plans):
     # Parse custom budget range if provided
     if isinstance(budget, str) and ("to" in budget.lower() or "-" in budget):
         try:
-            # Extract the lower and upper bounds from the user's input
             lower_bound, upper_bound = map(float, budget.lower().replace("around", "").replace("to", "").replace("-", "").replace("$", "").split())
         except ValueError:
-            # If parsing fails, fall back to default budget ranges
             lower_bound, upper_bound = None, None
     elif isinstance(budget, str) and ("under" in budget.lower()):
         try:
-            lower_bound = map(float, budget.lower().replace("under", "").replace(" ", "").replace("$", ""))
+            lower_bound = float(budget.lower().replace("under", "").replace(" ", "").replace("$", ""))
             upper_bound = None
         except ValueError:
             lower_bound, upper_bound = None, None
     elif isinstance(budget, str) and ("above" in budget.lower()):
         try: 
-            upper_bound = map(float, budget.lower().replace("above", "").replace(" ", "").replace("$", ""))
+            upper_bound = float(budget.lower().replace("above", "").replace(" ", "").replace("$", ""))
             lower_bound = None
         except ValueError:
             lower_bound, upper_bound = None, None
