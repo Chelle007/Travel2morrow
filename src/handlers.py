@@ -19,6 +19,8 @@ async def start_command(update: Update, context: CallbackContext) -> None:
             "chosen_default": False,
             "default_data_existed": False
         }
+    else:
+        user_variables[user_id]["chosen_default"] = False
     
     username = update.effective_user.username
     if username:
