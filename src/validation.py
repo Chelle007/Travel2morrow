@@ -58,14 +58,14 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
                 "prompt": "User is choosing whether they need adventure activities coverage (yes/no). Is their response valid? If valid, categorize as 'yes' or 'no'. If invalid, explain why."
             },
             ConversationState.ADVENTURE_DETAILS: {
-                "prompt": "User is entering list of risky adventurous activities they want to include in travel insurance. Is their response valid? If valid, transform it to cleaner list separated with comma. If invalid, explain why."
+                "prompt": "User is entering list of risky adventurous activities they want to include in travel insurance. Is their response valid or is the list considered adventurous and risky activities for travel insurance? If valid, transform it to cleaner list separated with comma. If invalid, explain why."
             },
             ConversationState.MEDICAL_CONDITIONS: {
                 "valid_options": ["yes", "no"],
                 "prompt": "User is indicating if they have medical conditions (yes/no). Is their response valid? If valid, categorize as 'yes' or 'no'. If invalid, explain why."
             },
             ConversationState.MEDICAL_DETAILS: {
-                "prompt": "User is entering their medical conditions for travel insurance. Is their response valid? If valid, transform it to cleaner list separated with comma. If invalid, explain why."
+                "prompt": "User is entering their medical conditions for travel insurance. Is their response valid or is the response considered as pre-existing medical conditions? If valid, transform it to cleaner list separated with comma. If invalid, explain why."
             },
             ConversationState.BUDGET: {
                 "prompt": "User is entering a budget. Extract the budget range from the user's input. Is their response valid? If valid, answer with this format: 'Under $x' or '$x - $y' or 'Above $y'. If invalid, explain why."
