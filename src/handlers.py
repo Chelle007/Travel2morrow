@@ -96,6 +96,10 @@ async def handle_state_transition(
             next_state = ConversationState.DEFAULT_ANSWER
         elif current_state == ConversationState.RECOMMENDATION and user_variables[user_id]['chosen_default']:
             next_state = ConversationState.DURATION
+        elif current_state == ConversationState.ADVENTURE_DETAILS:
+            next_state = ConversationState.ADVENTURE_ACTIVITIES
+        elif current_state == ConversationState.MEDICAL_DETAILS:
+            next_state = ConversationState.MEDICAL_CONDITIONS
         else:
             next_state = await determine_next_state(current_state, 'back')
         if current_state in user_responses.get(user_id, {}):
