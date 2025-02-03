@@ -14,7 +14,11 @@ async def start_command(update: Update, context: CallbackContext) -> None:
     user_id = update.effective_user.id
     user_states[user_id] = ConversationState.START
     user_responses[user_id] = {}
-    user_variables[user_id]['chosen_default'] = False
+    if user_id not in user_variables:
+        user_variables[user_id] = {
+            "chosen_default": False,
+            "default_data_existed": False
+        }
     
     username = update.effective_user.username
     if username:
