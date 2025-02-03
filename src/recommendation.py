@@ -12,7 +12,6 @@ def recommend_insurance_plans(user_responses, insurance_plans):
 
     # Extract user preferences
     budget = user_responses.get(ConversationState.BUDGET)
-    print(budget)
     trip_type = user_responses.get(ConversationState.TRIP_TYPE)
     medical_conditions = user_responses.get(ConversationState.MEDICAL_CONDITIONS)
     adventure_activities = user_responses.get(ConversationState.ADVENTURE_ACTIVITIES)
@@ -41,7 +40,6 @@ def recommend_insurance_plans(user_responses, insurance_plans):
         except ValueError:
             lower_bound, upper_bound = None, None
     elif isinstance(budget, str) and ("under" in budget.lower()):
-        print("Yes i'm here")
         try:
             lower_bound = float(budget.lower().replace("under", "").replace(" ", "").replace("$", ""))
             upper_bound = None
@@ -56,7 +54,6 @@ def recommend_insurance_plans(user_responses, insurance_plans):
     else:
         lower_bound, upper_bound = None, None
 
-    print("LOWER BOUND: " + str(lower_bound))
     # Filter plans based on budget
     if lower_bound is not None and upper_bound is not None:
         priority_plans = [plan for plan in recommendations if lower_bound <= plan["price"] <= upper_bound]

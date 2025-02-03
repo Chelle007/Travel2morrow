@@ -14,6 +14,7 @@ async def start_command(update: Update, context: CallbackContext) -> None:
     user_id = update.effective_user.id
     user_states[user_id] = ConversationState.START
     user_responses[user_id] = {}
+    user_variables[user_id]['chosen_default'] = False
     
     username = update.effective_user.username
     if username:
@@ -154,9 +155,7 @@ async def handle_state_transition(
         
         print("Generating recommendations...")
         insurance_plans = fetch_insurance_plans()
-        print(user_responses.get(user_id, {}))
         recommendations = recommend_insurance_plans(user_responses.get(user_id, {}), insurance_plans)
-        print(recommendations)
         
         if recommendations:
             recommendation_message = get_message_for_state(ConversationState.RECOMMENDATION, user_id) + '\n\n'
