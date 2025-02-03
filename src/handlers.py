@@ -137,6 +137,18 @@ async def handle_state_transition(
         elif current_state == ConversationState.DURATION and user_variables[user_id]['chosen_default']:
             print("Processing travel date with default answers")
             next_state = ConversationState.RECOMMENDATION
+
+        elif current_state == ConversationState.ADVENTURE_ACTIVITIES and next_action == "yes":
+            next_state = ConversationState.ADVENTURE_DETAILS
+        
+        elif current_state == ConversationState.ADVENTURE_DETAILS:
+            next_state = ConversationState.MEDICAL_CONDITIONS
+
+        elif current_state == ConversationState.MEDICAL_CONDITIONS and next_action == "yes":
+            next_state = ConversationState.MEDICAL_DETAILS
+        
+        elif current_state == ConversationState.MEDICAL_DETAILS:
+            next_state = ConversationState.BUDGET
         
         # Handle other button callbacks
         else:
