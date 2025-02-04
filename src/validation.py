@@ -85,7 +85,7 @@ async def validate_with_gpt(state: ConversationState, user_input: str) -> tuple[
             2. Date must not exceed 90 days later (must be before {ninety_days_later.strftime('%Y-%m-%d')})
             3. If year is not specified, assume {current_date.year} if the date would be in the future, otherwise assume {current_date.year + 1}
             4. If only date and month are provided, determine the appropriate year based on rule 2
-            5. Accept various date formats (e.g., "25 Dec", "December 25", "25/12", "next month", "tomorrow")
+            5. Accept various date formats (e.g., "25 Dec", "December 25", "25/12", "next month", "tomorrow", "25Dec", "Dec25")
             
             Respond in JSON format:
             {{
