@@ -184,10 +184,10 @@ async def handle_state_transition(
             for plan in recommendations:
                 recommendation_message += (
                     f"{plan['name']} - ${plan['price']:.2f}\n"
-                    f"Medical Coverage: ${plan['medical_coverage']:.2f}\n"
-                    f"Trip Cancellation Coverage: ${plan['trip_cancellation_coverage']:.2f}\n"
-                    f"Baggage Loss Coverage: ${plan['baggage_loss_coverage']:.2f}\n"
-                    f"Baggage Delay Coverage: ${plan['baggage_delay_coverage']:.2f}\n"
+                    f"Medical Coverage: ${plan['medical_coverage']:.0f}\n"
+                    f"Trip Cancellation Coverage: ${plan['trip_cancellation_coverage']:.0f}\n"
+                    f"Baggage Loss Coverage: ${plan['baggage_loss_coverage']:.0f}\n"
+                    f"Baggage Delay Coverage: ${plan['baggage_delay_coverage']:.0f}\n"
                 )
                 if plan["emergency_evacuation"]:
                     recommendation_message += "Emergency Evacuation: Yes\n"
