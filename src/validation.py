@@ -17,7 +17,7 @@ async def validate_with_gpt(state: ConversationState, user_input: str, user_id: 
         go_back_indicators = ["back", "previous", "return", "go back"]
         if any(indicator in user_input.lower() for indicator in go_back_indicators):
             back_response = await client.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "Determine if the user wants to go back to the previous question. Respond with only 'yes' or 'no'."},
                     {"role": "user", "content": f"Does this message indicate the user wants to go back: '{user_input}'"}
