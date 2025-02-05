@@ -94,6 +94,8 @@ async def handle_state_transition(
         print(f"GO BACK STATE: {current_state}")
         if current_state == ConversationState.DESTINATION and user_variables[user_id]['default_data_existed']:
             next_state = ConversationState.DEFAULT_ANSWER
+        elif current_state == ConversationState.AGE_GROUP:
+            next_state = ConversationState.WHO_TRAVELLING
         elif current_state == ConversationState.RECOMMENDATION and user_variables[user_id]['chosen_default']:
             next_state = ConversationState.RETURN_DATE
         elif current_state == ConversationState.ADVENTURE_DETAILS:
@@ -137,10 +139,19 @@ async def handle_state_transition(
                 user_responses[user_id] = {'telegram_handle': f"@{context.user_data.get('username')}"}
                 user_variables[user_id]['chosen_default'] = False
         
-        # Handle travel date state when using default answers
+        # Handle other special cases
         elif current_state == ConversationState.RETURN_DATE and user_variables[user_id]['chosen_default']:
             print("Processing travel date with default answers")
             next_state = ConversationState.RECOMMENDATION
+
+        elif current_state == ConversationState.WHO_TRAVELLING:
+            if (next_action == "solo"):
+                next_state = ConversationState.AGE_GROUP
+            else:
+                pass
+
+        elif current_state == ConversationState.AGE_GROUP:
+            next_state = ConversationState.TRIP_TYPE
 
         elif current_state == ConversationState.ADVENTURE_ACTIVITIES and next_action == "yes":
             next_state = ConversationState.ADVENTURE_DETAILS
@@ -184,10 +195,10 @@ async def handle_state_transition(
             for plan in recommendations:
                 recommendation_message += (
                     f"{plan['name']} - ${plan['price']:.2f}\n"
-                    f"Medical Coverage: ${plan['medical_coverage']:.0f}\n"
-                    f"Trip Cancellation Coverage: ${plan['trip_cancellation_coverage']:.0f}\n"
-                    f"Baggage Loss Coverage: ${plan['baggage_loss_coverage']:.0f}\n"
-                    f"Baggage Delay Coverage: ${plan['baggage_delay_coverage']:.0f}\n"
+                    f"Medical Coverage: ${plan['medical_coverage']:,.0f}\n"
+                    f"Trip Cancellation Coverage: ${plan['trip_cancellation_coverage']:,.0f}\n"
+                    f"Baggage Loss Coverage: ${plan['baggage_loss_coverage']:,.0f}\n"
+                    f"Baggage Delay Coverage: ${plan['baggage_delay_coverage']:,.0f}\n"
                 )
                 if plan["emergency_evacuation"]:
                     recommendation_message += "Emergency Evacuation: Yes\n"
