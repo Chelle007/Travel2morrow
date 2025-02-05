@@ -7,6 +7,7 @@ class ConversationState(Enum):
     DEPARTURE_DATE = auto()
     RETURN_DATE = auto()
     WHO_TRAVELLING = auto()
+    AGE_GROUP = auto()
     TRIP_TYPE = auto()
     ADVENTURE_ACTIVITIES = auto()
     ADVENTURE_DETAILS = auto()

@@ -6,8 +6,8 @@ def get_keyboard_for_state(state: ConversationState) -> Optional[ReplyKeyboardMa
     keyboards = {
         ConversationState.START: [
             ["Explore travel insurance options"],
-            ["Manage my existing travel insurance"],
-            ["Learn more about Travel2morrow"]
+            ["Manage my existing travel insurance (View, modify, or file a claim)"],
+            ["Learn more about Travel2morrow (Discover our services and benefits)"]
         ],
         ConversationState.DEFAULT_ANSWER: [
             ["Yes"],
@@ -16,6 +16,11 @@ def get_keyboard_for_state(state: ConversationState) -> Optional[ReplyKeyboardMa
         ConversationState.WHO_TRAVELLING: [
             ["Solo"],
             ["Family"]
+        ],
+        ConversationState.AGE_GROUP: [
+            ["Child (Under 18)"],
+            ["Adult (18 - 64)"],
+            ["Elderly (65 and above)"]
         ],
         ConversationState.TRIP_TYPE: [
             ["Single trip"],
