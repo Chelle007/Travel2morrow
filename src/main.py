@@ -5,7 +5,7 @@ from handlers import start_command, help_command, handle_message, button_handler
 
 def main():
     """Main function to run the bot."""
-    bot_api_key = TELEGRAM_TEST_BOT_API_KEY
+    bot_api_key = TELEGRAM_BOT_API_KEY
     
     application = Application.builder().token(bot_api_key).build()
     
