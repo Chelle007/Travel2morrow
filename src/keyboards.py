@@ -41,8 +41,8 @@ def get_keyboard_for_state(state: ConversationState) -> Optional[ReplyKeyboardMa
         ]
     }
     
-    keyboard = keyboards.get(state)
-    if keyboard and state != ConversationState.START:
+    keyboard = keyboards.get(state, [])
+    if state != ConversationState.START:
         keyboard.append(["◀️ Go Back"])
     
     return ReplyKeyboardMarkup(
