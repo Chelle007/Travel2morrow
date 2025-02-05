@@ -48,8 +48,8 @@ async def determine_next_state(current_state: ConversationState, user_input: str
         ConversationState.START,
         ConversationState.DEFAULT_ANSWER,
         ConversationState.DESTINATION,
-        ConversationState.TRAVEL_DATE,
-        ConversationState.DURATION,
+        ConversationState.DEPARTURE_DATE,
+        ConversationState.RETURN_DATE,
         ConversationState.WHO_TRAVELLING,
         ConversationState.TRIP_TYPE,
         ConversationState.ADVENTURE_ACTIVITIES,
@@ -95,7 +95,7 @@ async def handle_state_transition(
         if current_state == ConversationState.DESTINATION and user_variables[user_id]['default_data_existed']:
             next_state = ConversationState.DEFAULT_ANSWER
         elif current_state == ConversationState.RECOMMENDATION and user_variables[user_id]['chosen_default']:
-            next_state = ConversationState.DURATION
+            next_state = ConversationState.RETURN_DATE
         elif current_state == ConversationState.ADVENTURE_DETAILS:
             next_state = ConversationState.ADVENTURE_ACTIVITIES
         elif current_state == ConversationState.MEDICAL_DETAILS:
@@ -138,7 +138,7 @@ async def handle_state_transition(
                 user_variables[user_id]['chosen_default'] = False
         
         # Handle travel date state when using default answers
-        elif current_state == ConversationState.DURATION and user_variables[user_id]['chosen_default']:
+        elif current_state == ConversationState.RETURN_DATE and user_variables[user_id]['chosen_default']:
             print("Processing travel date with default answers")
             next_state = ConversationState.RECOMMENDATION
 
@@ -247,8 +247,8 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
         )
         return
     
-    # Handle free text input states (like DESTINATION, TRAVEL_DATE, etc.)
-    is_valid, validation_message, processed_value = await validate_with_gpt(current_state, user_input)
+    # Handle free text input states (like DESTINATION, DEPARTURE_DATE, etc.)
+    is_valid, validation_message, processed_value = await validate_with_gpt(current_state, user_input, user_id)
     print(f"Validation: valid={is_valid}, value={processed_value}")
     
     if not is_valid:
