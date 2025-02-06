@@ -6,8 +6,8 @@ def get_keyboard_for_state(state: ConversationState) -> Optional[ReplyKeyboardMa
     keyboards = {
         ConversationState.START: [
             ["Explore travel insurance options"],
-            ["Manage my existing travel insurance (View, modify, or file a claim)"],
-            ["Learn more about Travel2morrow (Discover our services and benefits)"]
+            ["Manage my existing travel insurance "],
+            ["Learn more about Travel2morrow"]
         ],
         ConversationState.DEFAULT_ANSWER: [
             ["Yes"],
