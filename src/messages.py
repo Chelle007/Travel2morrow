@@ -16,7 +16,7 @@ def get_message_for_state(state: ConversationState, user_id: int) -> str:
         ConversationState.ADVENTURE_DETAILS: "Which adventure activities will you be doing during your trip?\n\nFor example:\n- Scuba diving\n- Snorkeling\n- Hiking\n- Skiing or snowboarding\n- Skydiving\n- Parasailing\n- Cycling\n- Trekking",
         ConversationState.MEDICAL_CONDITIONS: "Do you have any pre-existing medical conditions?",
         ConversationState.MEDICAL_DETAILS: "Please share the details of your condition so we can tailor the best coverage for you.\n(For example: asthma, diabetes, heart disease)",
-        ConversationState.BUDGET: "Do you have a budget in mind?",
+        ConversationState.BUDGET: "What is your budget for travel insurance?",
         ConversationState.RECOMMENDATION: "Based on your preferences, here's our recommendation:",
         ConversationState.QUESTIONS: "Do you have any questions about your recommended plan?",
         ConversationState.MANAGE_INSURANCE: "Please select an option:",
