@@ -104,7 +104,7 @@ async def validate_with_gpt(state: ConversationState, user_input: str, user_id: 
             """
 
             response = await client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": date_system_prompt},
                     {"role": "user", "content": user_input}
@@ -155,7 +155,7 @@ async def validate_with_gpt(state: ConversationState, user_input: str, user_id: 
                 """
 
             response = await client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": date_system_prompt},
                     {"role": "user", "content": user_input}
@@ -193,7 +193,7 @@ async def validate_with_gpt(state: ConversationState, user_input: str, user_id: 
         """
 
         response = await client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_input}
