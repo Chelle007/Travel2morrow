@@ -1,0 +1,6 @@
+user_id,telegram_handle,phone_number,who_travelling,trip_type,adventure_activities,adventure_details,medical_conditions,medical_details,budget,created_at,updated_at
+d814c944-da5a-41c7-97b0-6d6203e2f6cb,@yohanestann,,solo,single,false,,false,,Above $100,2025-02-03 04:21:59.281968,2025-02-03 04:21:59.281968
+ec7474d7-d7e4-4ca2-a420-844426346c2e,@MichelleChan,,solo,single,false,,false,,Under $40,2025-02-02 08:36:28.652856,2025-02-03 22:54:16.151258
+94f4e33e-0573-4268-a784-229281773444,@azaa929,,solo,single,false,,false,,Under $50,2025-02-05 02:23:20.628606,2025-02-05 02:23:20.628606
+ca4017da-7097-4035-bdeb-eae4fc478862,@napyo,,solo,single,false,,false,,Under $50,2025-02-04 07:18:12.745104,2025-02-05 08:44:31.923063
+45f86203-2fab-4146-8a18-a408c98aaf5d,@jolinsooyeelum,,solo,single,false,,false,,Under $50,2025-02-04 07:22:40.225575,2025-02-09 06:01:53.608264
